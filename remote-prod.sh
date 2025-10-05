@@ -35,6 +35,7 @@ show_menu() {
     echo "10) Show volumes"
     echo "11) Backup data"
     echo "12) Shell in container"
+    echo "13) Create/refresh Telegram session (QR)"
     echo "13) Create/refresh Telegram session (interactive)"
     echo "0) Exit"
     echo -n "Choose option: "
@@ -128,6 +129,11 @@ EOF
             echo -e "${GREEN}Connecting to container shell...${NC}"
             remote_cmd "docker compose -f $COMPOSE_FILE exec ai-userbot /bin/bash" || \
                 echo -e "${RED}Could not connect. Is bot running?${NC}"
+            ;;
+        13)
+            echo -e "${GREEN}Interactive QR login...${NC}"
+            remote_cmd "docker compose -f $COMPOSE_FILE build ai-userbot"
+            ssh -t "$REMOTE_HOST" "docker compose -f $COMPOSE_FILE run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr.py"
             ;;
         13)
             echo -e "${GREEN}Interactive Telegram login...${NC}"

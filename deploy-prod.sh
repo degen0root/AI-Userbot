@@ -172,6 +172,15 @@ if [ -n "$LOCAL_SESS" ]; then
   echo -e "${GREEN}✓ Session installed to volume userbot_sessions${NC}"
 fi
 
+# Optional QR login fallback
+read -p "Run QR login instead (y/N)? " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+  echo -e "${GREEN}Starting QR login on remote...${NC}"
+  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml build ai-userbot"
+  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr.py"
+fi
+
 echo -e "${GREEN}Deploying container...${NC}"
 ssh "$REMOTE_HOST" << 'EOF'
 set -a; source ~/.ai-userbot.env; set +a
