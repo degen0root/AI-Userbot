@@ -93,12 +93,10 @@ async def main() -> int:
         return 3
 
     if isinstance(res, auth_types.LoginToken):
-        deeplink = f"tg://login?token={_b64url_no_pad(res.token)}"
-        _print_qr(deeplink)
-        # Poll until success
+        last_url = None
         print("Waiting for QR to be scanned…")
         while True:
-            await asyncio.sleep(2)
+            # Export a (possibly refreshed) token and react accordingly
             res2 = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
             if isinstance(res2, auth_types.LoginTokenSuccess):
                 print("QR login completed ✔")
@@ -109,25 +107,34 @@ async def main() -> int:
                     print("QR login completed after DC migrate ✔")
                     break
                 elif isinstance(imported, auth_types.LoginToken):
-                    deeplink = f"tg://login?token={_b64url_no_pad(imported.token)}"
-                    _print_qr(deeplink)
+                    url = f"tg://login?token={_b64url_no_pad(imported.token)}"
+                    if url != last_url:
+                        _print_qr(url)
+                        last_url = url
             elif isinstance(res2, auth_types.LoginToken):
-                # Still waiting; optionally refresh QR
-                pass
+                url = f"tg://login?token={_b64url_no_pad(res2.token)}"
+                if url != last_url:
+                    _print_qr(url)
+                    last_url = url
+            await asyncio.sleep(2)
     elif isinstance(res, auth_types.LoginTokenMigrateTo):
         imported = await app.invoke(ImportLoginToken(token=res.token))
         if isinstance(imported, auth_types.LoginTokenSuccess):
             print("QR login completed immediately after DC migrate ✔")
         elif isinstance(imported, auth_types.LoginToken):
-            deeplink = f"tg://login?token={_b64url_no_pad(imported.token)}"
-            _print_qr(deeplink)
             print("Waiting for QR to be scanned…")
+            last_url = None
             while True:
-                await asyncio.sleep(2)
                 res2 = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
                 if isinstance(res2, auth_types.LoginTokenSuccess):
                     print("QR login completed ✔")
                     break
+                elif isinstance(res2, auth_types.LoginToken):
+                    url = f"tg://login?token={_b64url_no_pad(res2.token)}"
+                    if url != last_url:
+                        _print_qr(url)
+                        last_url = url
+                await asyncio.sleep(2)
     else:
         print("Unexpected exportLoginToken result; retry later.", file=sys.stderr)
         await app.disconnect()
