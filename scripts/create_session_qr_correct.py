@@ -93,15 +93,37 @@ async def main():
             await asyncio.sleep(3)
             auth_attempts += 1
             try:
-                # Disconnect and reconnect to refresh session
+                # Try to check authorization status by calling ImportLoginToken
+                result = await app.invoke(
+                    functions.auth.ImportLoginToken(
+                        token=r.token
+                    )
+                )
+                
+                # If we get here without exception, authorization might be complete
+                print(f"\n✅ Authorization successful!")
+                
+                # Disconnect and reconnect with fresh session
                 await app.disconnect()
                 await app.connect()
                 
                 # Try to get user info
                 me = await app.get_me()
-                print(f"\n✅ Successfully logged in as: {me.first_name} (@{me.username})")
+                print(f"✅ Successfully logged in as: {me.first_name} (@{me.username})")
                 break
-            except Exception:
+                
+            except Exception as e:
+                # Check if it's an authorization error or just waiting
+                error_msg = str(e).lower()
+                if "auth_token_invalid" in error_msg or "session_password_needed" in error_msg:
+                    # Try direct user info check
+                    try:
+                        me = await app.get_me()
+                        print(f"\n✅ Successfully logged in as: {me.first_name} (@{me.username})")
+                        break
+                    except:
+                        pass
+                
                 # Still waiting
                 print(".", end="", flush=True)
                 continue
