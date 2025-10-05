@@ -89,10 +89,22 @@ async def wait_for_qr_and_finish(app: Client, cfg: Config) -> str:
     """
     Wait for UpdateLoginToken, then finalize and return the session string.
     """
-    # Wait for the specific raw update
-    async for update in app.listen_raw():
-        if isinstance(update, UpdateLoginToken):
-            return await finalize_after_update(app, cfg)
+    # Wait for the specific update using a polling approach
+    print("Waiting for authorization...")
+
+    for _ in range(60):  # Wait up to 60 seconds
+        await asyncio.sleep(1)
+
+        try:
+            # Try to get user info - if this works, we're authorized
+            me = await app.get_me()
+            print(f"\n✅ Successfully logged in as: {me.first_name} (@{me.username})")
+            return await app.export_session_string()
+        except:
+            continue
+
+    # If we get here, authorization timed out
+    raise RuntimeError("Authorization timeout")
 
 
 async def main():
