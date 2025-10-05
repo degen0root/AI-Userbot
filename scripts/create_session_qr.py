@@ -85,85 +85,82 @@ async def main() -> int:
     except Exception:
         pass
 
-    # First export
-    try:
-        res = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
-    except Exception as e:
-        print(f"ExportLoginToken failed: {e}", file=sys.stderr)
-        await app.stop()
-        return 3
+    # Correct flow: export ONCE, display URL, then import SAME token until success or expiry
+    while True:
+        try:
+            first = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
+        except Exception as e:
+            print(f"ExportLoginToken failed: {e}", file=sys.stderr)
+            await app.disconnect()
+            return 3
 
-    if isinstance(res, auth_types.LoginToken):
-        last_url = None
-        print("Waiting for QR to be scanned…")
-        while True:
-            # Export a (possibly refreshed) token and react accordingly
-            res2 = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
-            if isinstance(res2, auth_types.LoginTokenSuccess):
-                print("QR login completed ✔")
+        token_to_use: bytes | None = None
+        if isinstance(first, auth_types.LoginToken):
+            token_to_use = first.token
+        elif isinstance(first, auth_types.LoginTokenMigrateTo):
+            # Switch DC and get a token valid for that DC
+            try:
+                await app.session.set_dc(first.dc_id, first.ip, first.port)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            try:
+                imp = await app.invoke(ImportLoginToken(token=first.token))
+            except RPCError as e:
+                print(f"Initial migrate import error: {e}", file=sys.stderr)
+                continue
+            if isinstance(imp, auth_types.LoginTokenSuccess):
+                print("QR login completed immediately after DC migrate ✔")
                 break
-            elif isinstance(res2, auth_types.LoginTokenMigrateTo):
+            elif isinstance(imp, auth_types.LoginToken):
+                token_to_use = imp.token
+            else:
+                print("Unexpected import result; retrying…", file=sys.stderr)
+                continue
+        else:
+            print("Unexpected export result; retrying…", file=sys.stderr)
+            continue
+
+        # Show link once for this token
+        url = f"https://t.me/login?token={_b64url_no_pad(token_to_use)}"
+        _print_qr(url)
+        print("Waiting for approval in Telegram…")
+
+        # Poll import on the same token
+        while True:
+            try:
+                res = await app.invoke(ImportLoginToken(token=token_to_use))
+            except RPCError as e:
+                msg = str(e)
+                if "AUTH_TOKEN_EXPIRED" in msg:
+                    print("Token expired; generating a new one…")
+                    break  # back to export a fresh token
+                # Not accepted yet or transient error
+                await asyncio.sleep(0.6)
+                continue
+
+            if isinstance(res, auth_types.LoginTokenSuccess):
+                print("QR login completed ✔")
+                # Confirm and save
                 try:
-                    # Try to switch DC before importing the token
-                    try:
-                        await app.session.set_dc(res2.dc_id, res2.ip, res2.port)  # type: ignore[attr-defined]
-                    except Exception:
-                        pass
-                    imported = await app.invoke(ImportLoginToken(token=res2.token))
-                except RPCError as e:
-                    # Token likely expired; continue loop to get a fresh token
-                    print(f"ImportLoginToken error: {e}; refreshing QR…")
-                    imported = None
-                if isinstance(imported, auth_types.LoginTokenSuccess):
-                    print("QR login completed after DC migrate ✔")
-                    break
-                elif isinstance(imported, auth_types.LoginToken):
-                    url = f"tg://login?token={_b64url_no_pad(imported.token)}"
-                    if url != last_url:
-                        _print_qr(url)
-                        last_url = url
-            elif isinstance(res2, auth_types.LoginToken):
-                url = f"tg://login?token={_b64url_no_pad(res2.token)}"
-                if url != last_url:
-                    _print_qr(url)
-                    last_url = url
-            await asyncio.sleep(0.3)
-    elif isinstance(res, auth_types.LoginTokenMigrateTo):
-        imported = await app.invoke(ImportLoginToken(token=res.token))
-        if isinstance(imported, auth_types.LoginTokenSuccess):
-            print("QR login completed immediately after DC migrate ✔")
-        elif isinstance(imported, auth_types.LoginToken):
-            print("Waiting for QR to be scanned…")
-            last_url = None
-            while True:
-                res2 = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
-                if isinstance(res2, auth_types.LoginTokenSuccess):
-                    print("QR login completed ✔")
-                    break
-                elif isinstance(res2, auth_types.LoginToken):
-                    url = f"tg://login?token={_b64url_no_pad(res2.token)}"
-                    if url != last_url:
-                        _print_qr(url)
-                        last_url = url
-                await asyncio.sleep(0.3)
-    else:
-        print("Unexpected exportLoginToken result; retry later.", file=sys.stderr)
-        await app.disconnect()
-        return 5
-
-    # Confirm and save
-    try:
-        # Reconnect to ensure session reflects new auth
-        await app.disconnect()
-        await app.connect()
-        me = await app.get_me()
-        print(f"Authorized as: {getattr(me, 'first_name', '')} ({getattr(me, 'id', '')})")
-        print("Saved session.")
-    except Exception as e:
-        print(f"Authorized, but couldn't fetch profile — continuing. ({e})")
-
-    await app.disconnect()
-    return 0
+                    await app.disconnect(); await app.connect()
+                    me = await app.get_me()
+                    print(f"Authorized as: {getattr(me, 'first_name', '')} ({getattr(me, 'id', '')})")
+                    print("Saved session.")
+                except Exception:
+                    print("Authorized; session saved.")
+                await app.disconnect()
+                return 0
+            elif isinstance(res, auth_types.LoginTokenMigrateTo):
+                # Switch DC and try the same token again
+                try:
+                    await app.session.set_dc(res.dc_id, res.ip, res.port)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+                await asyncio.sleep(0.2)
+                continue
+            else:
+                # Still pending
+                await asyncio.sleep(0.6)
 
 
 if __name__ == "__main__":
