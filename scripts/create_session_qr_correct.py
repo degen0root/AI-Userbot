@@ -88,14 +88,10 @@ async def main():
         
         # Wait for authorization
         print("\n⏳ Please scan the QR code in Telegram and complete authorization...")
-        print("Press Enter when you're done authorizing in Telegram...")
+        print("The script will automatically check for authorization in 30 seconds...")
 
-        try:
-            input("⏳ Waiting for you to authorize... Press Enter when done...")
-        except KeyboardInterrupt:
-            print("\n\n❌ Cancelled by user.")
-            await app.disconnect()
-            return 1
+        # Wait 30 seconds for user to scan and authorize
+        await asyncio.sleep(30)
 
         # Now check if we're authorized
         try:
