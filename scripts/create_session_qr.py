@@ -41,17 +41,21 @@ def _b64url_no_pad(b: bytes) -> str:
 
 
 def _print_qr(deeplink: str) -> None:
-    print("\nScan this QR with Telegram (Settings → Devices → Link Desktop Device):\n")
+    # Render a high-contrast block QR in terminal (better for camera scanning)
     qr = qrcode.QRCode(border=1)
     qr.add_data(deeplink)
     qr.make(fit=True)
-    try:
-        qr.print_ascii(invert=True)
-    except Exception:
-        # Fallback: show URL if ASCII isn't available
-        pass
-    print("\nIf the QR isn't readable, open this URL on a screen and scan it:")
-    print(deeplink)
+    matrix = qr.get_matrix()
+    white = "  "
+    black = "██"
+    print("\nScan this QR with Telegram (Settings → Devices → Link Desktop Device):\n")
+    # Top quiet zone
+    print(white * (len(matrix[0]) + 2))
+    for row in matrix:
+        line = white + ''.join(black if cell else white for cell in row) + white
+        print(line)
+    # Bottom quiet zone
+    print(white * (len(matrix[0]) + 2))
     print("")
 
 
