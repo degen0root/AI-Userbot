@@ -38,9 +38,11 @@ async def main() -> int:
         print("Missing TELEGRAM_API_ID / TELEGRAM_API_HASH / TELEGRAM_PHONE_NUMBER in env", file=sys.stderr)
         return 2
 
-    # Ensure we store session under sessions/ if configured so
+    # Ensure we store session under sessions/ if configured so; default to sessions/
     session_name = cfg.telegram.session_name or "userbot_session"
-    # Ensure session directory exists if a path with directories is provided
+    if "/" not in session_name:
+        session_name = f"sessions/{session_name}"
+    # Ensure session directory exists
     session_dir = os.path.dirname(session_name)
     if session_dir:
         os.makedirs(session_dir, exist_ok=True)
@@ -54,10 +56,14 @@ async def main() -> int:
     )
 
     await app.connect()
-    if await app.is_authorized():
+    # Pyrogram v2 compatibility: no is_authorized(); try get_me()
+    try:
+        await app.get_me()
         print("Already authorized; session is valid.")
         await app.disconnect()
         return 0
+    except Exception:
+        pass
 
     print("Sending login code to your Telegram...")
     try:
