@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -80,7 +80,7 @@ class PolicySection(BaseModel):
     
     # Time zone and schedule
     timezone: str = Field(default="Europe/Moscow")
-    active_hours: Dict[str, any] = Field(default_factory=lambda: {
+    active_hours: Dict[str, Union[int, List[int]]] = Field(default_factory=lambda: {
         "wake_up": 8,
         "morning_active": [8, 12],
         "lunch_break": [12, 13],
