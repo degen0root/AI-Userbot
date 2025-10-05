@@ -24,26 +24,26 @@ help:
 
 # Build Docker image
 build:
-	docker-compose build
+	docker compose build
 
 # Start services
 up:
-	docker-compose up -d
+	docker compose up -d
 	@echo "✅ AI UserBot started!"
 	@echo "Run 'make logs' to see output"
 
 # Stop services
 down:
-	docker-compose down
+	docker compose down
 	@echo "🛑 AI UserBot stopped"
 
 # Show logs
 logs:
-	docker-compose logs -f ai-userbot
+	docker compose logs -f ai-userbot
 
 # Open shell in container
 shell:
-	docker-compose exec ai-userbot /bin/bash
+	docker compose exec ai-userbot /bin/bash
 
 # Clean up data
 clean:
@@ -54,16 +54,16 @@ clean:
 
 # Run tests
 test:
-	docker-compose run --rm ai-userbot python test_bot_context.py
-	docker-compose run --rm ai-userbot python test_human_behavior.py
+	docker compose run --rm ai-userbot python test_bot_context.py
+	docker compose run --rm ai-userbot python test_human_behavior.py
 
 # Show statistics
 stats:
-	docker-compose exec ai-userbot python manage.py --stats
+	docker compose exec ai-userbot python manage.py --stats
 
 # Development mode with live reload
 dev:
-	docker-compose run --rm -v ./src:/app/src ai-userbot python run.py
+	docker compose run --rm -v ./src:/app/src ai-userbot python run.py
 
 # First time setup
 setup:
@@ -99,13 +99,13 @@ prod:
 
 # Quick production commands
 prod-logs:
-	ssh moon@103.76.86.123 "docker-compose -f docker-compose.ai-userbot.yml logs -f --tail=50"
+	ssh moon@103.76.86.123 "docker compose -f docker-compose.ai-userbot.yml logs -f --tail=50"
 
 prod-status:
-	ssh moon@103.76.86.123 "docker-compose -f docker-compose.ai-userbot.yml ps"
+	ssh moon@103.76.86.123 "docker compose -f docker-compose.ai-userbot.yml ps"
 
 prod-restart:
-	ssh moon@103.76.86.123 "docker-compose -f docker-compose.ai-userbot.yml restart"
+	ssh moon@103.76.86.123 "docker compose -f docker-compose.ai-userbot.yml restart"
 
 # Git push and deploy
 push-deploy:

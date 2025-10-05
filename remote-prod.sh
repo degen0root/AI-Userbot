@@ -47,29 +47,29 @@ while true; do
     case $choice in
         1)
             echo -e "${GREEN}Bot status:${NC}"
-            remote_cmd "docker-compose -f $COMPOSE_FILE ps"
+            remote_cmd "docker compose -f $COMPOSE_FILE ps"
             ;;
         2)
             echo -e "${GREEN}Showing live logs (Ctrl+C to stop):${NC}"
-            remote_cmd "docker-compose -f $COMPOSE_FILE logs -f --tail=50"
+            remote_cmd "docker compose -f $COMPOSE_FILE logs -f --tail=50"
             ;;
         3)
             echo -e "${GREEN}Last 100 lines of logs:${NC}"
-            remote_cmd "docker-compose -f $COMPOSE_FILE logs --tail=100"
+            remote_cmd "docker compose -f $COMPOSE_FILE logs --tail=100"
             ;;
         4)
             echo -e "${YELLOW}Restarting bot...${NC}"
-            remote_cmd "docker-compose -f $COMPOSE_FILE restart"
+            remote_cmd "docker compose -f $COMPOSE_FILE restart"
             echo -e "${GREEN}Bot restarted!${NC}"
             ;;
         5)
             echo -e "${YELLOW}Stopping bot...${NC}"
-            remote_cmd "docker-compose -f $COMPOSE_FILE down"
+            remote_cmd "docker compose -f $COMPOSE_FILE down"
             echo -e "${GREEN}Bot stopped!${NC}"
             ;;
         6)
             echo -e "${YELLOW}Starting bot...${NC}"
-            remote_cmd "docker-compose -f $COMPOSE_FILE up -d"
+            remote_cmd "docker compose -f $COMPOSE_FILE up -d"
             echo -e "${GREEN}Bot started!${NC}"
             ;;
         7)
@@ -78,7 +78,7 @@ while true; do
             read -p "Continue? (y/N) " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
-                remote_cmd "docker-compose -f $COMPOSE_FILE build --no-cache && docker-compose -f $COMPOSE_FILE up -d"
+                remote_cmd "docker compose -f $COMPOSE_FILE build --no-cache && docker compose -f $COMPOSE_FILE up -d"
                 echo -e "${GREEN}Updated!${NC}"
             fi
             ;;
@@ -125,7 +125,7 @@ EOF
             ;;
         12)
             echo -e "${GREEN}Connecting to container shell...${NC}"
-            remote_cmd "docker-compose -f $COMPOSE_FILE exec ai-userbot /bin/bash" || \
+            remote_cmd "docker compose -f $COMPOSE_FILE exec ai-userbot /bin/bash" || \
                 echo -e "${RED}Could not connect. Is bot running?${NC}"
             ;;
         0)

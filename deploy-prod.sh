@@ -83,7 +83,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Copy docker-compose.prod.yml to remote
-echo -e "${GREEN}Copying docker-compose file...${NC}"
+echo -e "${GREEN}Copying docker compose file...${NC}"
 scp docker-compose.prod.yml "$REMOTE_HOST:~/docker-compose.ai-userbot.yml"
 
 # Create config in volume if not exists
@@ -139,16 +139,16 @@ source ~/.ai-userbot.env
 set +a
 
 # Stop old container
-docker-compose -f docker-compose.ai-userbot.yml down || true
+docker compose -f docker-compose.ai-userbot.yml down || true
 
 # Pull and build
 echo "Building from GitHub..."
-docker-compose -f docker-compose.ai-userbot.yml build --no-cache
+docker compose -f docker-compose.ai-userbot.yml build --no-cache
 
 # Start new container
-docker-compose -f docker-compose.ai-userbot.yml up -d
+docker compose -f docker-compose.ai-userbot.yml up -d
 EOF
 
 # Show logs
 echo -e "${GREEN}Container started! Showing logs...${NC}"
-ssh "$REMOTE_HOST" "docker-compose -f docker-compose.ai-userbot.yml logs -f --tail=50"
+ssh "$REMOTE_HOST" "docker compose -f docker-compose.ai-userbot.yml logs -f --tail=50"
