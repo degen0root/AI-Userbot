@@ -38,10 +38,12 @@ async def main() -> int:
         print("Missing TELEGRAM_API_ID / TELEGRAM_API_HASH / TELEGRAM_PHONE_NUMBER in env", file=sys.stderr)
         return 2
 
-    # Ensure we store session under sessions/ if configured so; default to sessions/
+    # Ensure we store session under sessions/ and use absolute path inside container
     session_name = cfg.telegram.session_name or "userbot_session"
     if "/" not in session_name:
         session_name = f"sessions/{session_name}"
+    if not os.path.isabs(session_name):
+        session_name = os.path.join("/app", session_name)
     # Ensure session directory exists
     session_dir = os.path.dirname(session_name)
     if session_dir:
