@@ -4,6 +4,7 @@ Simple QR code session creator for AI-Userbot.
 """
 
 import asyncio
+import base64
 import os
 import sys
 
@@ -11,7 +12,12 @@ import sys
 sys.path.insert(0, '/app')
 
 from pyrogram import Client
-from pyrogram.raw import functions
+from pyrogram.raw.functions.auth import ExportLoginToken
+import qrcode
+
+
+def b64url_no_pad(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).decode().rstrip("=")
 
 
 async def main():
@@ -23,7 +29,7 @@ async def main():
         return 1
 
     session_path = "/app/sessions/userbot_session"
-    
+
     print("Creating Pyrogram client...")
     app = Client(
         name=session_path,
@@ -33,7 +39,7 @@ async def main():
 
     print("Connecting to Telegram...")
     await app.connect()
-    
+
     # Check if already authorized
     try:
         me = await app.get_me()
@@ -43,47 +49,66 @@ async def main():
     except Exception:
         print("Not authorized, generating QR code...")
 
-    # Generate QR code
-    try:
-        print("Requesting login token...")
-        r = await app.invoke(
-            functions.auth.ExportLoginToken(
-                api_id=api_id,
-                api_hash=api_hash,
-                except_ids=[]
-            )
-        )
-        
-        # Create login URL
-        login_url = f"tg://login?token={r.token.hex()}"
-        
+    # Generate login token
+    exported = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
+
+    if hasattr(exported, 'token'):
+        # Generate QR code
+        deep_link = f"tg://login?token={b64url_no_pad(exported.token)}"
+
         print("\n" + "="*50)
         print("QR CODE AUTHORIZATION")
         print("="*50 + "\n")
-        print("Open this URL in Telegram (or scan QR code):")
-        print(f"\n{login_url}\n")
-        print("Waiting for authorization...")
-        
-        # Wait for authorization
-        while True:
-            await asyncio.sleep(3)
-            try:
-                me = await app.get_me()
-                print(f"\n✅ Successfully logged in as: {me.first_name} (@{me.username})")
-                break
-            except Exception:
-                # Still waiting
-                print(".", end="", flush=True)
-                continue
-                
-    except Exception as e:
-        print(f"\nError during QR login: {e}")
-        await app.disconnect()
-        return 1
 
-    print("\nSaving session...")
+        # Generate QR code
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=1,
+            border=1,
+        )
+        qr.add_data(deep_link)
+        qr.make(fit=True)
+
+        # Print QR code to console
+        print("Scan this QR code with your Telegram app:\n")
+        qr.print_ascii(invert=True)
+
+        print(f"\nDirect link: {deep_link}")
+        print("\n✅ QR code generated successfully!")
+        print("📱 Please scan the QR code in Telegram and complete authorization.")
+        print("⏳ After authorization, press Ctrl+C to continue...")
+
+        try:
+            # Wait for user to interrupt
+            while True:
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            print("\n\n🔄 Checking authorization status...")
+
+        # Check if authorized
+        try:
+            # Disconnect and reconnect with fresh session
+            await app.disconnect()
+            await app.connect()
+
+            # Try to get user info
+            me = await app.get_me()
+            print(f"\n✅ Successfully logged in as: {me.first_name} (@{me.username})")
+
+            # Export session string
+            session_string = await app.export_session_string()
+            print("\n=== SESSION STRING ===")
+            print(session_string)
+            print(f"\n💾 Session saved to: {session_path}.session")
+
+        except Exception as e:
+            print(f"\n❌ Authorization failed: {e}")
+            print("❌ Please try again or check if the QR code was scanned correctly")
+            await app.disconnect()
+            return 1
+
     await app.disconnect()
-    print("Session saved successfully!")
     return 0
 
 
@@ -92,5 +117,5 @@ if __name__ == "__main__":
         exit_code = asyncio.run(main())
         sys.exit(exit_code)
     except KeyboardInterrupt:
-        print("\nCancelled by user")
+        print("\n❌ Cancelled by user")
         sys.exit(130)
