@@ -1,160 +1,256 @@
 #!/usr/bin/env python3
 """
-Correct QR code session creator for AI-Userbot.
+Bulletproof QR login for Pyrogram:
+- Auto-refresh QR before expiry
+- Handles DC migrate (LoginTokenMigrateTo) via auth.importLoginToken
+- Finalizes after UpdateLoginToken and prints session string
+- ASCII/PNG output; headless friendly
+
+Usage examples:
+  python scripts/create_session_qr_correct.py --ascii \
+    --session-name sessions/userbot_session
+
+Environment for convenience:
+  TELEGRAM_API_ID / API_ID
+  TELEGRAM_API_HASH / API_HASH
+  SESSION_NAME (optional)
+  QR_PNG (optional)
+  QR_REFRESH_MARGIN (seconds, default 5)
 """
 
-import asyncio
-import os
-import sys
-import base64
+from __future__ import annotations
 
-# Add the app directory to Python path
-sys.path.insert(0, '/app')
+import argparse
+import asyncio
+import base64
+import os
+import signal
+import sys
+import time
+from typing import Optional, Tuple
 
 from pyrogram import Client
-from pyrogram.raw import functions
-import qrcode
+from pyrogram.raw.functions.auth import ExportLoginToken, ImportLoginToken
+from pyrogram.raw.types import UpdateLoginToken
+from pyrogram.raw.types import auth as auth_types
+
+try:
+    import qrcode
+except Exception:
+    qrcode = None  # ASCII fallback only
 
 
-async def main():
-    api_id = int(os.getenv("TELEGRAM_API_ID", 0))
-    api_hash = os.getenv("TELEGRAM_API_HASH", "")
+def b64url_no_pad(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).decode().rstrip("=")
 
-    if not api_id or not api_hash:
-        print("ERROR: Missing TELEGRAM_API_ID or TELEGRAM_API_HASH in environment", file=sys.stderr)
-        return 1
 
-    session_path = "/app/sessions/userbot_session"
-    
-    print("Creating Pyrogram client...")
-    app = Client(
-        name=session_path,
-        api_id=api_id,
-        api_hash=api_hash,
-    )
+def make_deeplink(token_bytes: bytes) -> str:
+    # Telegram deep link scheme for QR login
+    return f"tg://login?token={b64url_no_pad(token_bytes)}"
 
-    print("Connecting to Telegram...")
+
+def render_ascii_qr(deeplink: str):
+    # High-contrast block QR for terminal scanning
+    if qrcode is None:
+        print("\n[!] qrcode not installed; showing deep link only:\n", deeplink)
+        return
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(deeplink)
+    qr.make(fit=True)
+    m = qr.get_matrix()
+    BLACK, WHITE = "██", "  "
+    print()
+    # top quiet zone
+    print(WHITE * (len(m[0]) + 2))
+    for row in m:
+        print(WHITE + "".join(BLACK if cell else WHITE for cell in row) + WHITE)
+    # bottom quiet zone
+    print(WHITE * (len(m[0]) + 2))
+    print()
+
+
+def save_png_qr(deeplink: str, path: str, open_viewer: bool):
+    if qrcode is None:
+        raise RuntimeError("qrcode is required for PNG output. Install with: pip install qrcode[pil]")
+    img = qrcode.make(deeplink)
+    img.save(path)
+    if open_viewer:
+        try:
+            img.show()
+        except Exception:
+            pass
+
+
+async def on_update_login_token(app: Client, stop_evt: asyncio.Event):
+    @app.on_raw_update()
+    async def _handler(_, update, __):  # type: ignore
+        if isinstance(update, UpdateLoginToken):
+            stop_evt.set()
+
+
+async def export_token(app: Client, api_id: int, api_hash: str):
+    res = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash))
+    if isinstance(res, auth_types.LoginToken):
+        return "token", res
+    if isinstance(res, auth_types.LoginTokenMigrateTo):
+        return "migrate", res
+    if isinstance(res, auth_types.LoginTokenSuccess):
+        return "success", res
+    raise RuntimeError("Unexpected ExportLoginToken result.")
+
+
+async def finalize_after_update_fast(app: Client, api_id: int, api_hash: str) -> bool:
+    """Finalize authorization with a short, rapid loop to avoid token expiry races.
+
+    Tries multiple times in quick succession:
+    - exportLoginToken → success? done
+    - exportLoginToken → migrate? importLoginToken → success? done
+    Otherwise retries a few times with tiny sleeps.
+    """
+    for _ in range(20):  # ~4 seconds at 200ms steps
+        kind, obj = await export_token(app, api_id, api_hash)
+        if kind == "success":
+            return True
+        if kind == "migrate":
+            try:
+                imported = await app.invoke(ImportLoginToken(token=obj.token))
+            except Exception:
+                await asyncio.sleep(0.2)
+                continue
+            if isinstance(imported, auth_types.LoginTokenSuccess):
+                return True
+        await asyncio.sleep(0.2)
+    return False
+
+
+async def qr_login_and_get_session(
+    api_id: int,
+    api_hash: str,
+    session_name: str,
+    refresh_margin_s: int,
+    ascii_only: bool,
+    png_path: Optional[str],
+    open_png_viewer: bool,
+) -> Tuple[str, str]:
+    app = Client(session_name, api_id=api_id, api_hash=api_hash)
     await app.connect()
-    
-    # Check if already authorized
-    try:
-        me = await app.get_me()
-        print(f"Already authorized as: {me.first_name} (@{me.username})")
-        await app.disconnect()
-        return 0
-    except Exception:
-        print("Not authorized, generating QR code...")
 
-    # Generate QR code
     try:
-        print("Requesting login token...")
-        r = await app.invoke(
-            functions.auth.ExportLoginToken(
-                api_id=api_id,
-                api_hash=api_hash,
-                except_ids=[]
+        # Listen for UpdateLoginToken
+        update_evt = asyncio.Event()
+        await on_update_login_token(app, update_evt)
+
+        def show_qr_from_token(login_token: auth_types.LoginToken):
+            deeplink = make_deeplink(login_token.token)
+            if png_path:
+                save_png_qr(deeplink, png_path, open_png_viewer)
+                print(f"\nQR saved to {png_path} (scan with a logged-in Telegram app)")
+            if ascii_only or not png_path:
+                render_ascii_qr(deeplink)
+
+        while True:
+            kind, obj = await export_token(app, api_id, api_hash)
+
+            if kind == "success":
+                break
+
+            if kind == "migrate":
+                imported = await app.invoke(ImportLoginToken(token=obj.token))
+                if isinstance(imported, auth_types.LoginTokenSuccess):
+                    break
+                if isinstance(imported, auth_types.LoginToken):
+                    obj = imported
+                    kind = "token"
+                else:
+                    continue  # loop re-exports
+
+            if kind == "token":
+                show_qr_from_token(obj)
+
+                # Use expires to refresh slightly before expiry; meanwhile poll the update event rapidly.
+                now = int(time.time())
+                expires = getattr(obj, "expires", now + 60)
+                deadline = max(now + 1, int(expires - refresh_margin_s))
+
+                # Poll quickly for UpdateLoginToken to minimize race with expiry
+                while time.time() < deadline:
+                    if update_evt.is_set():
+                        ok = await finalize_after_update_fast(app, api_id, api_hash)
+                        if ok:
+                            update_evt.clear()
+                            return await app.export_session_string(), f"@{(await app.get_me()).username or (await app.get_me()).id}"
+                        update_evt.clear()
+                    await asyncio.sleep(0.2)
+                # No update before margin; loop will re-export and print a fresh QR
+
+        # Authorized → export session string (optional convenience)
+        session_string = await app.export_session_string()
+        me = await app.get_me()
+        me_display = f"@{getattr(me, 'username', None) or me.id}"
+        return session_string, me_display
+
+    finally:
+        await app.disconnect()
+
+
+def parse_args() -> argparse.Namespace:
+    # Prefer TELEGRAM_* envs, fallback to API_ID/API_HASH
+    env_api_id = os.getenv("TELEGRAM_API_ID") or os.getenv("API_ID")
+    env_api_hash = os.getenv("TELEGRAM_API_HASH") or os.getenv("API_HASH")
+    env_session = os.getenv("SESSION_NAME", "qr_session")
+    p = argparse.ArgumentParser(description="Pyrogram QR login (robust) → session string")
+    p.add_argument("--api-id", type=int, default=env_api_id, required=env_api_id is None)
+    p.add_argument("--api-hash", type=str, default=env_api_hash, required=env_api_hash is None)
+    p.add_argument("--session-name", type=str, default=env_session)
+    p.add_argument("--ascii", action="store_true", help="Force ASCII QR in terminal")
+    p.add_argument("--png", type=str, default=os.getenv("QR_PNG"), help="Save QR to this PNG file")
+    p.add_argument("--no-view", action="store_true", help="Do not open the PNG viewer")
+    p.add_argument("--refresh-margin", type=int, default=int(os.getenv("QR_REFRESH_MARGIN", "5")),
+                   help="Seconds before expiry to refresh the QR")
+    return p.parse_args()
+
+
+def install_signal_handlers(loop: asyncio.AbstractEventLoop):
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, loop.stop)
+        except NotImplementedError:
+            pass
+
+
+def main():
+    args = parse_args()
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    install_signal_handlers(loop)
+
+    try:
+        session_string, me_display = loop.run_until_complete(
+            qr_login_and_get_session(
+                api_id=int(args.api_id),
+                api_hash=str(args.api_hash),
+                session_name=args.session_name,
+                refresh_margin_s=args.refresh_margin,
+                ascii_only=bool(args.ascii),
+                png_path=args.png,
+                open_png_viewer=not args.no_view,
             )
         )
-        
-        # Convert token to base64url format (no padding)
-        token_base64url = base64.urlsafe_b64encode(r.token).decode('ascii').rstrip('=')
-        
-        # Create login URL with tg:// deep link format and base64url token
-        login_url = f"tg://login?token={token_base64url}"
-        
-        print("\n" + "="*50)
-        print("QR CODE AUTHORIZATION")
-        print("="*50 + "\n")
-        
-        # Generate QR code
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=1,
-            border=1,
-        )
-        qr.add_data(login_url)
-        qr.make(fit=True)
-        
-        # Print QR code to console
-        print("Scan this QR code with your Telegram app:\n")
-        qr.print_ascii(invert=True)
-        
-        print(f"\nDebug info:")
-        print(f"Token (hex): {r.token.hex()}")
-        print(f"Token (base64url): {token_base64url}")
-        print(f"Full URL: {login_url}")
-        print("\nWaiting for authorization...")
-        
-        # Wait for authorization
-        print("\n⏳ Please scan the QR code in Telegram and complete authorization...")
-        print("The script will check for authorization status...")
-
-        # Check authorization status periodically
-        max_attempts = 20  # 60 seconds timeout (20 * 3 seconds)
-        for attempt in range(max_attempts):
-            await asyncio.sleep(3)
-
-            try:
-                # Try to import the login token
-                result = await app.invoke(
-                    functions.auth.ImportLoginToken(
-                        token=r.token
-                    )
-                )
-
-                if isinstance(result, types.auth.LoginTokenSuccess):
-                    print(f"\n✅ Authorization successful!")
-
-                    # Disconnect and reconnect with fresh session
-                    await app.disconnect()
-                    await app.connect()
-
-                    # Try to get user info
-                    me = await app.get_me()
-                    print(f"✅ Successfully logged in as: {me.first_name} (@{me.username})")
-                    break
-
-                elif attempt == max_attempts - 1:
-                    print(f"\n❌ Authorization timeout")
-                    await app.disconnect()
-                    return 1
-
-            except Exception as e:
-                # Check if we can get user info now
-                try:
-                    me = await app.get_me()
-                    print(f"\n✅ Successfully logged in as: {me.first_name} (@{me.username})")
-                    break
-                except:
-                    if attempt == max_attempts - 1:
-                        print(f"\n❌ Authorization failed: {e}")
-                        await app.disconnect()
-                        return 1
-                    continue
-
-        if attempt >= max_attempts:
-            print("\n❌ Authorization timeout")
-            await app.disconnect()
-            return 1
-                
+        print(f"\n✅ Logged in as: {me_display}")
+        print("\n=== SESSION STRING ===")
+        print(session_string)
+        print(f"\nSaved session file: {args.session_name}.session")
+        print("Keep this session string SECRET.")
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
+        sys.exit(130)
     except Exception as e:
-        print(f"\nError during QR login: {e}")
-        import traceback
-        traceback.print_exc()
-        await app.disconnect()
-        return 1
-
-    print("\nSaving session...")
-    await app.disconnect()
-    print("Session saved successfully!")
-    return 0
+        print(f"\n[!] Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        loop.close()
 
 
 if __name__ == "__main__":
-    try:
-        exit_code = asyncio.run(main())
-        sys.exit(exit_code)
-    except KeyboardInterrupt:
-        print("\nCancelled by user")
-        sys.exit(130)
+    main()
