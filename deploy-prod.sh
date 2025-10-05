@@ -142,7 +142,8 @@ echo -e "${GREEN}Checking for existing Telegram session...${NC}"
 echo -e "${YELLOW}Ensuring service is stopped to avoid SendCode collisions...${NC}"
 ssh "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose -f docker-compose.ai-userbot.yml down || true"
 ssh "$REMOTE_HOST" << 'EOF'
-SESSION_NAME=$(docker run --rm -v userbot_config:/config alpine sh -lc "awk -F': ' '/session_name:/ {print \$2}' /config/config.yaml | tr -d '\"' || echo sessions/userbot_session")
+SESSION_NAME=$(docker run --rm -v userbot_config:/config alpine sh -lc "awk -F': ' '/session_name:/ {print \$2}' /config/config.yaml | tr -d '\"' || true")
+if [ -z "$SESSION_NAME" ]; then SESSION_NAME="sessions/userbot_session"; fi
 SESSION_FILE="/sessions/$(basename "$SESSION_NAME").session"
 if docker run --rm -v userbot_sessions:/sessions alpine test -f "$SESSION_FILE"; then
   echo "Session exists: $SESSION_FILE"
@@ -156,8 +157,10 @@ read -p "Run interactive login now (y/N)? " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
   echo -e "${GREEN}Starting interactive login on remote...${NC}"
-  # Use --entrypoint '' to bypass image entrypoint if remote image isn't rebuilt yet
-  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session.py"
+  # Build image to ensure /app/scripts/create_session.py exists
+  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml build ai-userbot"
+  # Use --entrypoint '' to bypass image entrypoint; then run the script inside
+  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot sh -lc 'if [ -f /app/scripts/create_session.py ]; then python /app/scripts/create_session.py; else echo \"Script not found in image. Falling back to inline runner...\"; python - <<\'PY'\nimport asyncio, os, sys\nfrom getpass import getpass\nfrom pyrogram import Client\nfrom pyrogram.errors import SessionPasswordNeeded, FloodWait\nfrom pathlib import Path\n\n# Minimal config reader for session_name fallback\ndef get_session_name() -> str:\n    try:\n        import yaml\n        p = Path(\"/app/configs/config.yaml\")\n        data = yaml.safe_load(p.read_text(encoding=\"utf-8\")) or {}\n        name = (((data.get(\"telegram\") or {}).get(\"session_name\")) or \"sessions/userbot_session\")\n        return name\n    except Exception:\n        return \"sessions/userbot_session\"\n\nasync def main():\n    api_id = int(os.getenv(\"TELEGRAM_API_ID\", \"0\") or 0)\n    api_hash = os.getenv(\"TELEGRAM_API_HASH\", \"\")\n    phone = os.getenv(\"TELEGRAM_PHONE_NUMBER\", \"\")\n    if not api_id or not api_hash or not phone:\n        print(\"Missing TELEGRAM_API_ID/TELEGRAM_API_HASH/TELEGRAM_PHONE_NUMBER\", file=sys.stderr)\n        return 2\n    session_name = get_session_name() or \"sessions/userbot_session\"\n    os.makedirs(os.path.dirname(session_name), exist_ok=True)\n    app = Client(name=session_name, api_id=api_id, api_hash=api_hash, phone_number=phone)\n    await app.connect()\n    if await app.is_authorized():\n        print(\"Already authorized; session is valid.\")\n        await app.disconnect()\n        return 0\n    print(\"Sending login code to your Telegram...\")\n    try:\n        sent = await app.send_code(phone)\n    except FloodWait as e:\n        wait_s = getattr(e, \"x\", None) or getattr(e, \"value\", None) or 60\n        print(f\"FloodWait: need to wait {int(wait_s)} seconds...\")\n        await asyncio.sleep(int(wait_s) + 1)\n        sent = await app.send_code(phone)\n    code = input(\"Enter the code you received (digits): \").strip()\n    try:\n        await app.sign_in(phone_number=phone, code=code, phone_code_hash=sent.phone_code_hash)\n    except SessionPasswordNeeded:\n        pwd = os.getenv(\"TELEGRAM_2FA_PASSWORD\") or getpass(\"Enter your 2FA password: \")\n        await app.check_password(password=pwd)\n    print(\"Logged in successfully; saving session...\")\n    await app.disconnect()\n    return 0\n\nif __name__ == \"__main__\":\n    try:\n        rc = asyncio.run(main())\n    except KeyboardInterrupt:\n        rc = 130\n    sys.exit(rc)\nPY\nfi'"
 fi
 
 echo -e "${GREEN}Deploying container...${NC}"
