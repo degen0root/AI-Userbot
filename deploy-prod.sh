@@ -86,66 +86,83 @@ fi
 echo -e "${GREEN}Copying docker compose file...${NC}"
 scp docker-compose.prod.yml "$REMOTE_HOST:~/docker-compose.ai-userbot.yml"
 
-# Create config in volume if not exists
+########################################
+# Prepare config in volume and session  #
+########################################
 echo -e "${GREEN}Preparing config volume...${NC}"
 ssh "$REMOTE_HOST" << 'EOF'
 # Check if config exists in volume
 if ! docker run --rm -v userbot_config:/config alpine test -f /config/config.yaml; then
-    echo "Creating config.yaml in volume..."
-    # Create temporary config
+  echo "Creating config.yaml in volume from example (if available) or minimal..."
+  if [ -f ~/AI-Userbot/configs/config.example.yaml ]; then
+    docker run --rm \
+      -v ~/AI-Userbot/configs/config.example.yaml:/source/config.yaml:ro \
+      -v userbot_config:/config alpine cp /source/config.yaml /config/config.yaml
+  else
     cat > /tmp/config.yaml << 'CONFIG'
 app:
   name: "AI-UserBot"
   logging_level: "INFO"
-
+telegram:
+  session_name: "sessions/userbot_session"
 persona:
   name: "Анна"
   age: 28
   bio: "Мама двоих детей, подруга создательницы ЛУННЫЙ ХРАМ"
-  interests:
-    - "йога"
-    - "медитация"
-    - "путешествия"
-    - "материнство"
-  writing_style: "теплый и дружелюбный"
-
 policy:
   promotion_probability: 0.03
   min_gap_seconds_per_chat: 300
   typing_speed_wpm: 40
   timezone: "Europe/Moscow"
-
 llm:
-  provider: "openai"
+  provider: "stub"
   model: "gpt-4o-mini"
   temperature: 0.7
   max_tokens: 150
 CONFIG
-    
-    # Copy to volume
-    docker run --rm -v /tmp/config.yaml:/source/config.yaml:ro \
-        -v userbot_config:/config alpine cp /source/config.yaml /config/
+    docker run --rm -v /tmp/config.yaml:/source/config.yaml:ro -v userbot_config:/config alpine cp /source/config.yaml /config/config.yaml
     rm /tmp/config.yaml
-    echo "Config created in volume"
+  fi
+  echo "Config created in volume"
+fi
+
+# Ensure session_name uses sessions/ path for persistence
+if docker run --rm -v userbot_config:/config alpine sh -lc "grep -q '^\\s*session_name: \\\"userbot_session\\\"' /config/config.yaml"; then
+  echo "Adjusting session_name to sessions/userbot_session for persistence..."
+  docker run --rm -v userbot_config:/config alpine sh -lc "sed -i 's|session_name: \"userbot_session\"|session_name: \"sessions/userbot_session\"|' /config/config.yaml"
+fi
+
+# Show effective session_name
+echo -n "Session path: "
+docker run --rm -v userbot_config:/config alpine sh -lc "awk -F': ' '/session_name:/ {print \$2}' /config/config.yaml | tr -d '\"' || true"
+EOF
+
+# Interactive session setup if missing
+echo -e "${GREEN}Checking for existing Telegram session...${NC}"
+ssh "$REMOTE_HOST" << 'EOF'
+SESSION_NAME=$(docker run --rm -v userbot_config:/config alpine sh -lc "awk -F': ' '/session_name:/ {print \$2}' /config/config.yaml | tr -d '\"' || echo sessions/userbot_session")
+SESSION_FILE="/sessions/$(basename "$SESSION_NAME").session"
+if docker run --rm -v userbot_sessions:/sessions alpine test -f "$SESSION_FILE"; then
+  echo "Session exists: $SESSION_FILE"
+else
+  echo "No session found at $SESSION_FILE"
+  echo "An interactive login is needed to create the session."
 fi
 EOF
 
-# Deploy using remote docker-compose
+read -p "Run interactive login now (y/N)? " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+  echo -e "${GREEN}Starting interactive login on remote...${NC}"
+  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm -it ai-userbot python scripts/create_session.py"
+fi
+
 echo -e "${GREEN}Deploying container...${NC}"
-ssh "$REMOTE_HOST" << EOF
-# Load environment
-set -a
-source ~/.ai-userbot.env
-set +a
-
-# Stop old container
+ssh "$REMOTE_HOST" << 'EOF'
+set -a; source ~/.ai-userbot.env; set +a
 docker compose -f docker-compose.ai-userbot.yml down || true
-
-# Pull and build
 echo "Building from GitHub..."
 docker compose -f docker-compose.ai-userbot.yml build --no-cache
-
-# Start new container
 docker compose -f docker-compose.ai-userbot.yml up -d
 EOF
 
