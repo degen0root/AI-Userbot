@@ -104,6 +104,11 @@ async def main() -> int:
                 break
             elif isinstance(res2, auth_types.LoginTokenMigrateTo):
                 try:
+                    # Try to switch DC before importing the token
+                    try:
+                        await app.session.set_dc(res2.dc_id, res2.ip, res2.port)  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
                     imported = await app.invoke(ImportLoginToken(token=res2.token))
                 except RPCError as e:
                     # Token likely expired; continue loop to get a fresh token
@@ -122,7 +127,7 @@ async def main() -> int:
                 if url != last_url:
                     _print_qr(url)
                     last_url = url
-            await asyncio.sleep(2)
+            await asyncio.sleep(0.3)
     elif isinstance(res, auth_types.LoginTokenMigrateTo):
         imported = await app.invoke(ImportLoginToken(token=res.token))
         if isinstance(imported, auth_types.LoginTokenSuccess):
@@ -140,7 +145,7 @@ async def main() -> int:
                     if url != last_url:
                         _print_qr(url)
                         last_url = url
-                await asyncio.sleep(2)
+                await asyncio.sleep(0.3)
     else:
         print("Unexpected exportLoginToken result; retry later.", file=sys.stderr)
         await app.disconnect()
