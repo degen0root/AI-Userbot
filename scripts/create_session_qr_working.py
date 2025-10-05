@@ -47,7 +47,7 @@ async def finalize_after_update(app: Client, cfg: Config) -> str:
     Re-export or import the token (if migrated) to finish authorization,
     then return the session string.
     """
-    res = await app.invoke(ExportLoginToken(api_id=cfg.api_id, api_hash=cfg.api_hash))
+    res = await app.invoke(ExportLoginToken(api_id=cfg.api_id, api_hash=cfg.api_hash, except_ids=[]))
 
     # Case 1: Success right away
     if isinstance(res, auth_types.LoginTokenSuccess):
@@ -103,7 +103,7 @@ async def main():
 
     try:
         # 1) First export -> display QR
-        exported = await app.invoke(ExportLoginToken(api_id=cfg.api_id, api_hash=cfg.api_hash))
+        exported = await app.invoke(ExportLoginToken(api_id=cfg.api_id, api_hash=cfg.api_hash, except_ids=[]))
 
         if isinstance(exported, auth_types.LoginToken):
             show_qr_for_token(exported.token)
