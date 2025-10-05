@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
 """
-QR-based Pyrogram session creator for AI-Userbot.
+QR-based Pyrogram session creator using raw API (ExportLoginToken/ImportLoginToken).
 
-Steps:
-  - Connect without sending SMS code
-  - Request a QR login token from Telegram
-  - Render QR in terminal (ASCII) and print URL as fallback
-  - Wait until you scan and approve in Telegram app
-  - Save .session under /app/sessions (volume-backed)
+Flow:
+  1) Export a login token and render a tg://login?token=... QR
+  2) When another Telegram client scans the QR, we receive UpdateLoginToken
+  3) Export again to finalize; handle DC migration by ImportLoginToken
+  4) On success, the session becomes authorized and is saved
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import sys
 from pathlib import Path
 
 import qrcode
 from pyrogram import Client
-from pyrogram.errors import FloodWait
+from pyrogram.raw.functions.auth import ExportLoginToken, ImportLoginToken
+from pyrogram.raw.types import UpdateLoginToken
+from pyrogram.raw.types import auth as auth_types
 
 from src.ai_userbot.config import load_config
 
@@ -31,6 +33,25 @@ def _resolve_session_path(name: str) -> str:
         name = os.path.join("/app", name)
     Path(os.path.dirname(name)).mkdir(parents=True, exist_ok=True)
     return name
+
+
+def _b64url_no_pad(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).decode().rstrip("=")
+
+
+def _print_qr(deeplink: str) -> None:
+    print("\nScan this QR with Telegram (Settings → Devices → Link Desktop Device):\n")
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(deeplink)
+    qr.make(fit=True)
+    try:
+        qr.print_ascii(invert=True)
+    except Exception:
+        # Fallback: show URL if ASCII isn't available
+        pass
+    print("\nIf the QR isn't readable, open this URL on a screen and scan it:")
+    print(deeplink)
+    print("")
 
 
 async def main() -> int:
@@ -63,48 +84,77 @@ async def main() -> int:
     except Exception:
         pass
 
+    done = asyncio.Event()
+
+    @app.on_raw_update()
+    async def _on_raw_update(_, update, __):  # type: ignore[no-redef]
+        if isinstance(update, UpdateLoginToken):
+            try:
+                res2 = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash))
+                if isinstance(res2, auth_types.LoginTokenSuccess):
+                    print("QR login completed ✔")
+                    done.set()
+                elif isinstance(res2, auth_types.LoginTokenMigrateTo):
+                    # Switch DC and import token
+                    try:
+                        await app.session.set_dc(res2.dc_id, res2.ip, res2.port)  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+                    imported = await app.invoke(ImportLoginToken(token=res2.token))
+                    if isinstance(imported, auth_types.LoginTokenSuccess):
+                        print("QR login completed after DC migrate ✔")
+                        done.set()
+                    elif isinstance(imported, auth_types.LoginToken):
+                        deeplink = f"tg://login?token={_b64url_no_pad(imported.token)}"
+                        _print_qr(deeplink)
+                elif isinstance(res2, auth_types.LoginToken):
+                    deeplink = f"tg://login?token={_b64url_no_pad(res2.token)}"
+                    _print_qr(deeplink)
+            except Exception as e:
+                print(f"Error during finalize: {e}", file=sys.stderr)
+
+    # First export
     try:
-        # Request QR login token
-        qr = await app.qr_login()
-    except AttributeError:
-        print("This Pyrogram version doesn't support qr_login(). Rebuild the image without cache to update Pyrogram:", file=sys.stderr)
-        print("  docker compose -f docker-compose.ai-userbot.yml build --no-cache ai-userbot", file=sys.stderr)
+        res = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash))
+    except Exception as e:
+        print(f"ExportLoginToken failed: {e}", file=sys.stderr)
         await app.disconnect()
         return 3
-    except FloodWait as e:
-        wait_s = int(getattr(e, "x", 60))
-        print(f"FloodWait from Telegram: wait {wait_s} seconds before requesting QR again.")
-        await app.disconnect()
-        return 4
 
-    # Render ASCII QR in terminal
-    try:
-        qr_code = qrcode.QRCode(border=1)
-        qr_code.add_data(qr.url)  # type: ignore[attr-defined]
-        qr_code.make(fit=True)
-        print("\nScan this QR with Telegram (Settings → Devices → Link Desktop Device):\n")
-        qr_code.print_ascii(invert=True)
-        print("\nIf the QR isn't readable, open this URL on a screen and scan it:")
-        print(qr.url)  # type: ignore[attr-defined]
-        print("")
-    except Exception as e:
-        print(f"Couldn't render QR: {e}. Use URL instead:\n{getattr(qr, 'url', '<no url>')}\n")
-
-    # Wait until login is approved in Telegram app
-    print("Waiting for approval in Telegram app...")
-    try:
-        await qr.wait()  # type: ignore[attr-defined]
-    except Exception as e:
-        print(f"QR login failed: {e}", file=sys.stderr)
+    if isinstance(res, auth_types.LoginToken):
+        deeplink = f"tg://login?token={_b64url_no_pad(res.token)}"
+        _print_qr(deeplink)
+    elif isinstance(res, auth_types.LoginTokenMigrateTo):
+        try:
+            await app.session.set_dc(res.dc_id, res.ip, res.port)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        imported = await app.invoke(ImportLoginToken(token=res.token))
+        if isinstance(imported, auth_types.LoginToken):
+            deeplink = f"tg://login?token={_b64url_no_pad(imported.token)}"
+            _print_qr(deeplink)
+        elif isinstance(imported, auth_types.LoginTokenSuccess):
+            print("QR login completed immediately after DC migrate ✔")
+            done.set()
+        else:
+            print("Unexpected importLoginToken result; retry later.", file=sys.stderr)
+            await app.disconnect()
+            return 4
+    else:
+        print("Unexpected exportLoginToken result; retry later.", file=sys.stderr)
         await app.disconnect()
         return 5
 
-    # Save session
+    print("Waiting for QR to be scanned…")
+    await done.wait()
+
+    # Confirm and save
     try:
-        await app.get_me()
-        print("Logged in successfully; saving session...")
+        me = await app.get_me()
+        print(f"Authorized as: {getattr(me, 'first_name', '')} ({getattr(me, 'id', '')})")
+        print("Saved session.")
     except Exception:
-        print("Login appears incomplete; cannot confirm.", file=sys.stderr)
+        print("Authorized, but couldn't fetch profile — continuing.")
 
     await app.disconnect()
     return 0
