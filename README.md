@@ -19,7 +19,7 @@ AI UserBot - это продвинутый Telegram userbot, который ис
 
 ```bash
 # Клонирование репозитория
-git clone https://github.com/yourusername/AI-Userbot.git
+git clone https://github.com/degen0root/AI-Userbot.git
 cd AI-Userbot
 
 # Первоначальная настройка
