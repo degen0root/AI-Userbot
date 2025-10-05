@@ -93,6 +93,11 @@ async def main():
             await asyncio.sleep(3)
             auth_attempts += 1
             try:
+                # Disconnect and reconnect to refresh session
+                await app.disconnect()
+                await app.connect()
+                
+                # Try to get user info
                 me = await app.get_me()
                 print(f"\n✅ Successfully logged in as: {me.first_name} (@{me.username})")
                 break
