@@ -6,7 +6,6 @@ Correct QR code session creator for AI-Userbot.
 import asyncio
 import os
 import sys
-import base64
 
 # Add the app directory to Python path
 sys.path.insert(0, '/app')
@@ -56,11 +55,11 @@ async def main():
             )
         )
         
-        # Convert token to base64url format (no padding)
-        token_base64 = base64.urlsafe_b64encode(r.token).decode('ascii').rstrip('=')
+        # Use token directly as hex string for tg:// deep link
+        token_hex = r.token.hex()
         
-        # Create login URL with https://t.me/login format
-        login_url = f"https://t.me/login?token={token_base64}"
+        # Create login URL with tg:// deep link format
+        login_url = f"tg://login?token={token_hex}"
         
         print("\n" + "="*50)
         print("QR CODE AUTHORIZATION")
@@ -81,8 +80,7 @@ async def main():
         qr.print_ascii(invert=True)
         
         print(f"\nDebug info:")
-        print(f"Token (hex): {r.token.hex()}")
-        print(f"Token (base64url): {token_base64}")
+        print(f"Token (hex): {token_hex}")
         print(f"Full URL: {login_url}")
         print("\nWaiting for authorization...")
         
