@@ -37,8 +37,19 @@ def show_qr_for_token(token_bytes: bytes):
     deep_link = f"tg://login?token={b64url_no_pad(token_bytes)}"
     print("\nScan this QR with a Telegram app that is already logged in:")
     print(deep_link)  # fallback if QR viewer can't open
-    # Render a QR image and show it
-    qrcode.make(deep_link).show()
+
+    # Generate and print QR code to console
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=1,
+        border=1,
+    )
+    qr.add_data(deep_link)
+    qr.make(fit=True)
+
+    print("\nQR Code:")
+    qr.print_ascii(invert=True)
 
 
 async def finalize_after_update(app: Client, cfg: Config) -> str:
