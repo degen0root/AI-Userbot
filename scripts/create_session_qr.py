@@ -90,16 +90,12 @@ async def main() -> int:
     async def _on_raw_update(_, update, __):  # type: ignore[no-redef]
         if isinstance(update, UpdateLoginToken):
             try:
-                res2 = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash))
+                res2 = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
                 if isinstance(res2, auth_types.LoginTokenSuccess):
                     print("QR login completed ✔")
                     done.set()
                 elif isinstance(res2, auth_types.LoginTokenMigrateTo):
-                    # Switch DC and import token
-                    try:
-                        await app.session.set_dc(res2.dc_id, res2.ip, res2.port)  # type: ignore[attr-defined]
-                    except Exception:
-                        pass
+                    # Switch DC and import token (Pyrogram handles routing internally)
                     imported = await app.invoke(ImportLoginToken(token=res2.token))
                     if isinstance(imported, auth_types.LoginTokenSuccess):
                         print("QR login completed after DC migrate ✔")
@@ -115,7 +111,7 @@ async def main() -> int:
 
     # First export
     try:
-        res = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash))
+        res = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
     except Exception as e:
         print(f"ExportLoginToken failed: {e}", file=sys.stderr)
         await app.disconnect()
@@ -125,10 +121,6 @@ async def main() -> int:
         deeplink = f"tg://login?token={_b64url_no_pad(res.token)}"
         _print_qr(deeplink)
     elif isinstance(res, auth_types.LoginTokenMigrateTo):
-        try:
-            await app.session.set_dc(res.dc_id, res.ip, res.port)  # type: ignore[attr-defined]
-        except Exception:
-            pass
         imported = await app.invoke(ImportLoginToken(token=res.token))
         if isinstance(imported, auth_types.LoginToken):
             deeplink = f"tg://login?token={_b64url_no_pad(imported.token)}"
