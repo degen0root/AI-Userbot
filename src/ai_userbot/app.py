@@ -147,6 +147,20 @@ class Application:
             console.print("\n[yellow]Please update your config.yaml or set environment variables[/yellow]")
             return False
         
+        # Ensure Pyrogram session file exists to avoid repeated SendCode (FloodWait)
+        session_name = self.config.telegram.session_name or "userbot_session"
+        session_path = Path(session_name)
+        if session_path.suffix != ".session":
+            session_path = session_path.with_suffix(".session")
+        if not session_path.exists():
+            console.print("[red]Telegram session not found[/red]")
+            console.print(f"Expected session file: [cyan]{session_path}[/cyan]")
+            console.print("\n[yellow]Create the session interactively first:[/yellow]")
+            console.print("  python scripts/create_session.py")
+            console.print("\nIf running via Docker compose:")
+            console.print("  docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm -it ai-userbot python scripts/create_session.py")
+            return False
+
         return True
     
     def _display_startup_info(self):
