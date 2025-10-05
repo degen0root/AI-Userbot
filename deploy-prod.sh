@@ -163,6 +163,15 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
   ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session.py"
 fi
 
+# Offer installing session from a local file (bypass FloodWait)
+read -p "Or provide path to a local .session file to upload (empty to skip): " LOCAL_SESS
+if [ -n "$LOCAL_SESS" ]; then
+  echo -e "${GREEN}Uploading local session file and installing into volume...${NC}"
+  scp "$LOCAL_SESS" "$REMOTE_HOST:/tmp/userbot_session.session"
+  ssh "$REMOTE_HOST" "docker run --rm -v userbot_sessions:/sessions -v /tmp/userbot_session.session:/src/session:ro alpine cp /src/session /sessions/userbot_session.session && rm /tmp/userbot_session.session"
+  echo -e "${GREEN}✓ Session installed to volume userbot_sessions${NC}"
+fi
+
 echo -e "${GREEN}Deploying container...${NC}"
 ssh "$REMOTE_HOST" << 'EOF'
 set -a; source ~/.ai-userbot.env; set +a
