@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Project specific
+.env
+configs/config.yaml
+*.session
+*.session-journal
+userbot.db
+userbot.db-journal
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Backups
+*.bak
+*.backup
+*.old
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Old deployment scripts (kept locally)
+deploy.sh
+remote-manage.sh
+docker-compose.persona.yml
+.env.example

@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  ai-userbot:
+    # Build from GitHub repository
+    build:
+      context: https://github.com/${GITHUB_USER}/${GITHUB_REPO}.git#${GITHUB_BRANCH:-main}
+      dockerfile: Dockerfile
+    image: ai-userbot:latest
+    container_name: ai-userbot-persona
+    restart: always
+    environment:
+      # Environment
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      
+      # Telegram credentials
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - TELEGRAM_PHONE_NUMBER=${TELEGRAM_PHONE_NUMBER}
+      
+      # LLM credentials (optional)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      
+      # Promoted bot info
+      - PROMOTED_BOT_USERNAME=${PROMOTED_BOT_USERNAME}
+      - PROMOTED_BOT_NAME=${PROMOTED_BOT_NAME}
+      
+      # Timezone
+      - TZ=Europe/Moscow
+    volumes:
+      # Use named volumes for persistence
+      - userbot_data:/app/data
+      - userbot_logs:/app/logs
+      - userbot_sessions:/app/sessions
+      - userbot_config:/app/configs
+    networks:
+      - userbot-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+networks:
+  userbot-network:
+    driver: bridge
+
+volumes:
+  userbot_data:
+    driver: local
+  userbot_logs:
+    driver: local
+  userbot_sessions:
+    driver: local
+  userbot_config:
+    driver: local

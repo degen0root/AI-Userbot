@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+.env
+*.session
+*.session-journal
+data/
+logs/
+.git/
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# Tests
+test_*.py
+*_test.py
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

@@ -1,0 +1,97 @@
+app:
+  name: "AI-UserBot"
+  logging_level: "INFO"
+
+telegram:
+  # Userbot credentials (get from https://my.telegram.org)
+  api_id: 0  # Set via TELEGRAM_API_ID env var
+  api_hash: ""  # Set via TELEGRAM_API_HASH env var
+  phone_number: ""  # Set via TELEGRAM_PHONE_NUMBER env var
+  session_name: "userbot_session"
+  
+  # Chat search settings
+  search_keywords:
+    # Женские чаты
+    - "женский"
+    - "девушки"
+    - "подруги"
+    - "мамочки"
+    - "женщины"
+    # Путешествия
+    - "бали"
+    - "балифорум"
+    - "таиланд"
+    - "путешествия"
+    - "travel"
+    # Локальные
+    - "москва"
+    - "moscow"
+  min_members: 50
+  max_members: 10000
+  
+  # Chat categories (для разного поведения)
+  chat_categories:
+    women: ["женский", "девушки", "мамочки", "женщины"]
+    travel: ["бали", "travel", "путешеств", "таиланд", "азия"]
+    local: ["москва", "moscow", "мск"]
+    general: []  # Все остальные
+
+persona:
+  name: "Анна"
+  age: 28
+  bio: "Люблю йогу, медитации и саморазвитие"
+  interests:
+    - "йога"
+    - "медитация"
+    - "психология"
+    - "саморазвитие"
+    - "астрология"
+    - "духовные практики"
+  writing_style: "дружелюбный, эмпатичный, с эмодзи"
+
+promoted_bot:
+  username: "@womanspirit_bot"  # Set via PROMOTED_BOT_USERNAME env var
+  name: "ЛУННЫЙ ХРАМ"  # Set via PROMOTED_BOT_NAME env var
+  context_file: "promoted_bot_context.py"
+
+policy:
+  disclose_identity: false  # Don't reveal bot identity
+  disclosure_text: ""
+  min_gap_seconds_per_chat: 300  # 5 minutes between messages
+  max_replies_per_hour_per_chat: 8
+  relevance_threshold: 0.25
+  promotion_probability: 0.03  # 3% chance to mention bot (только в женских чатах!)
+  # ВАЖНО: не используем @ в тексте промо для безопасности!
+  promotion_text: "Моя подруга создала бот ЛУННЫЙ ХРАМ - я одна из первых тестировала, найдешь в поиске телеграма 🌙"
+  forbidden_terms:
+    - "18+"
+    - "NSFW"
+    - "политика"
+    - "продажа"
+    - "реклама"
+  
+  # Human-like behavior
+  typing_speed_wpm: 40
+  reaction_delay_range: [5, 30]  # seconds
+  
+  # Time zone and schedule (Moscow time)
+  timezone: "Europe/Moscow"
+  active_hours:
+    wake_up: 8  # Просыпается в 8 утра
+    morning_active: [8, 12]  # Активна утром
+    lunch_break: [12, 13]  # Обеденный перерыв
+    afternoon_active: [13, 18]  # Активна днем
+    evening_active: [19, 22]  # Вечерняя активность
+    sleep_time: 23  # Ложится спать в 23:00
+  
+  # Activity patterns
+  weekend_activity_multiplier: 0.7  # Меньше активности в выходные
+  night_messages_probability: 0.05  # 5% шанс ответить ночью (как будто проснулась к ребенку)
+
+llm:
+  provider: "stub"  # Options: stub, openai, anthropic, google/gemini
+  model: "gpt-4o-mini"  # Model name for the provider
+  temperature: 0.7
+  max_tokens: 256
+  # API keys should be set via environment variables:
+  # OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY
