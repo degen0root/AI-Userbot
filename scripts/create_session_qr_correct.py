@@ -91,7 +91,7 @@ async def main():
         print("The script will check for authorization status...")
 
         # Check authorization status periodically
-        max_attempts = 60  # 3 minutes timeout
+        max_attempts = 20  # 60 seconds timeout (20 * 3 seconds)
         for attempt in range(max_attempts):
             await asyncio.sleep(3)
 
