@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""
+Simple QR code session creator for AI-Userbot.
+"""
+
+import asyncio
+import os
+import sys
+
+# Add the app directory to Python path
+sys.path.insert(0, '/app')
+
+from pyrogram import Client
+from pyrogram.raw import functions
+
+
+async def main():
+    api_id = int(os.getenv("TELEGRAM_API_ID", 0))
+    api_hash = os.getenv("TELEGRAM_API_HASH", "")
+
+    if not api_id or not api_hash:
+        print("ERROR: Missing TELEGRAM_API_ID or TELEGRAM_API_HASH in environment", file=sys.stderr)
+        return 1
+
+    session_path = "/app/sessions/userbot_session"
+    
+    print("Creating Pyrogram client...")
+    app = Client(
+        name=session_path,
+        api_id=api_id,
+        api_hash=api_hash,
+    )
+
+    print("Connecting to Telegram...")
+    await app.connect()
+    
+    # Check if already authorized
+    try:
+        me = await app.get_me()
+        print(f"Already authorized as: {me.first_name} (@{me.username})")
+        await app.disconnect()
+        return 0
+    except Exception:
+        print("Not authorized, generating QR code...")
+
+    # Generate QR code
+    try:
+        print("Requesting login token...")
+        r = await app.invoke(
+            functions.auth.ExportLoginToken(
+                api_id=api_id,
+                api_hash=api_hash,
+                except_ids=[]
+            )
+        )
+        
+        # Create login URL
+        login_url = f"tg://login?token={r.token.hex()}"
+        
+        print("\n" + "="*50)
+        print("QR CODE AUTHORIZATION")
+        print("="*50 + "\n")
+        print("Open this URL in Telegram (or scan QR code):")
+        print(f"\n{login_url}\n")
+        print("Waiting for authorization...")
+        
+        # Wait for authorization
+        while True:
+            await asyncio.sleep(3)
+            try:
+                me = await app.get_me()
+                print(f"\n✅ Successfully logged in as: {me.first_name} (@{me.username})")
+                break
+            except Exception:
+                # Still waiting
+                print(".", end="", flush=True)
+                continue
+                
+    except Exception as e:
+        print(f"\nError during QR login: {e}")
+        await app.disconnect()
+        return 1
+
+    print("\nSaving session...")
+    await app.disconnect()
+    print("Session saved successfully!")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        exit_code = asyncio.run(main())
+        sys.exit(exit_code)
+    except KeyboardInterrupt:
+        print("\nCancelled by user")
+        sys.exit(130)
