@@ -73,13 +73,13 @@ async def main() -> int:
         api_hash=api_hash,
     )
 
-    await app.connect()
-
+    # Start client to receive updates/handlers
+    await app.start()
     # Already logged in?
     try:
         await app.get_me()
         print("Already authorized; session is valid.")
-        await app.disconnect()
+        await app.stop()
         return 0
     except Exception:
         pass
@@ -114,7 +114,7 @@ async def main() -> int:
         res = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
     except Exception as e:
         print(f"ExportLoginToken failed: {e}", file=sys.stderr)
-        await app.disconnect()
+        await app.stop()
         return 3
 
     if isinstance(res, auth_types.LoginToken):
@@ -130,11 +130,11 @@ async def main() -> int:
             done.set()
         else:
             print("Unexpected importLoginToken result; retry later.", file=sys.stderr)
-            await app.disconnect()
+            await app.stop()
             return 4
     else:
         print("Unexpected exportLoginToken result; retry later.", file=sys.stderr)
-        await app.disconnect()
+        await app.stop()
         return 5
 
     print("Waiting for QR to be scanned…")
@@ -148,7 +148,7 @@ async def main() -> int:
     except Exception:
         print("Authorized, but couldn't fetch profile — continuing.")
 
-    await app.disconnect()
+    await app.stop()
     return 0
 
 
