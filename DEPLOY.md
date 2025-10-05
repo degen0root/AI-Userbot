@@ -15,7 +15,7 @@ TELEGRAM_API_HASH=your_api_hash
 TELEGRAM_PHONE_NUMBER=+your_phone
 PROMOTED_BOT_USERNAME=womanspirit_bot
 PROMOTED_BOT_NAME="ЛУННЫЙ ХРАМ"
-GITHUB_USER=yourusername
+GITHUB_USER=degen0root
 GITHUB_REPO=AI-Userbot
 GITHUB_BRANCH=main
 ```

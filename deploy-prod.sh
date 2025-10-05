@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 # Configuration
 REMOTE_HOST="moon@103.76.86.123"
 DOCKER_CONTEXT="persona"
-GITHUB_USER="${GITHUB_USER:-yourusername}"
+GITHUB_USER="${GITHUB_USER:-degen0root}"
 GITHUB_REPO="${GITHUB_REPO:-AI-Userbot}"
 GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
 
