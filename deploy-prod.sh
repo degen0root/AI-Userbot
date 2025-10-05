@@ -139,6 +139,8 @@ EOF
 
 # Interactive session setup if missing
 echo -e "${GREEN}Checking for existing Telegram session...${NC}"
+echo -e "${YELLOW}Ensuring service is stopped to avoid SendCode collisions...${NC}"
+ssh "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose -f docker-compose.ai-userbot.yml down || true"
 ssh "$REMOTE_HOST" << 'EOF'
 SESSION_NAME=$(docker run --rm -v userbot_config:/config alpine sh -lc "awk -F': ' '/session_name:/ {print \$2}' /config/config.yaml | tr -d '\"' || echo sessions/userbot_session")
 SESSION_FILE="/sessions/$(basename "$SESSION_NAME").session"
@@ -154,7 +156,8 @@ read -p "Run interactive login now (y/N)? " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
   echo -e "${GREEN}Starting interactive login on remote...${NC}"
-  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm -it ai-userbot python scripts/create_session.py"
+  # Use --entrypoint '' to bypass image entrypoint if remote image isn't rebuilt yet
+  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session.py"
 fi
 
 echo -e "${GREEN}Deploying container...${NC}"

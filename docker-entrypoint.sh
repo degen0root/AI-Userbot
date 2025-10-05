@@ -28,4 +28,11 @@ YAML
   fi
 fi
 
-exec python /app/run.py
+# If a custom command is provided (e.g. for interactive session creation), run it.
+# Otherwise start the main app.
+if [ "$#" -gt 0 ]; then
+  echo "[entrypoint] Executing custom command: $@"
+  exec "$@"
+else
+  exec python /app/run.py
+fi
