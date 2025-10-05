@@ -22,7 +22,7 @@ import sys
 from getpass import getpass
 
 from pyrogram import Client
-from pyrogram.errors import SessionPasswordNeeded
+from pyrogram.errors import SessionPasswordNeeded, FloodWait
 
 from src.ai_userbot.config import load_config
 
@@ -40,6 +40,10 @@ async def main() -> int:
 
     # Ensure we store session under sessions/ if configured so
     session_name = cfg.telegram.session_name or "userbot_session"
+    # Ensure session directory exists if a path with directories is provided
+    session_dir = os.path.dirname(session_name)
+    if session_dir:
+        os.makedirs(session_dir, exist_ok=True)
     print(f"Using session name/path: {session_name}")
 
     app = Client(
@@ -56,7 +60,13 @@ async def main() -> int:
         return 0
 
     print("Sending login code to your Telegram...")
-    sent = await app.send_code(phone)
+    try:
+        sent = await app.send_code(phone)
+    except FloodWait as e:
+        wait_s = getattr(e, "x", None) or getattr(e, "value", None) or 60
+        print(f"FloodWait: need to wait {wait_s} seconds before retrying...")
+        await asyncio.sleep(int(wait_s) + 1)
+        sent = await app.send_code(phone)
     code = input("Enter the code you received (digits): ").strip()
 
     try:
@@ -81,4 +91,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         rc = 130
     sys.exit(rc)
-
