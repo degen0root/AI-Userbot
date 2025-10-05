@@ -132,7 +132,7 @@ EOF
             ;;
         13)
             echo -e "${GREEN}Interactive QR login...${NC}"
-            remote_cmd "docker compose -f $COMPOSE_FILE build ai-userbot"
+            remote_cmd "docker compose -f $COMPOSE_FILE build --no-cache ai-userbot"
             ssh -t "$REMOTE_HOST" "docker compose -f $COMPOSE_FILE run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr.py"
             ;;
         13)

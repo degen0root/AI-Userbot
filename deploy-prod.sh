@@ -158,7 +158,7 @@ echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
   echo -e "${GREEN}Starting interactive login on remote...${NC}"
   # Build image to ensure /app/scripts/create_session.py exists
-  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml build ai-userbot"
+  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml build --no-cache ai-userbot"
   # Use --entrypoint '' to bypass image entrypoint; then run the script inside
   ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session.py"
 fi
@@ -177,7 +177,7 @@ read -p "Run QR login instead (y/N)? " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
   echo -e "${GREEN}Starting QR login on remote...${NC}"
-  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml build ai-userbot"
+  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml build --no-cache ai-userbot"
   ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr.py"
 fi
 

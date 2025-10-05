@@ -1,5 +1,5 @@
 # Telegram userbot library
-pyrogram>=2.0.0
+pyrogram>=2.0.100
 TgCrypto>=1.2.5
 
 # AI and LLM

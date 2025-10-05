@@ -67,7 +67,8 @@ async def main() -> int:
         # Request QR login token
         qr = await app.qr_login()
     except AttributeError:
-        print("This Pyrogram version doesn't support qr_login(). Update pyrogram to >=2.0.", file=sys.stderr)
+        print("This Pyrogram version doesn't support qr_login(). Rebuild the image without cache to update Pyrogram:", file=sys.stderr)
+        print("  docker compose -f docker-compose.ai-userbot.yml build --no-cache ai-userbot", file=sys.stderr)
         await app.disconnect()
         return 3
     except FloodWait as e:
@@ -115,4 +116,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         rc = 130
     sys.exit(rc)
-
