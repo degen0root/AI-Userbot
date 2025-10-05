@@ -115,10 +115,22 @@ class AppConfig(BaseModel):
     telegram_bot_token: str = Field(default="")  # Kept for compatibility
 
 
-def load_config(path: str | os.PathLike[str]) -> AppConfig:
+def load_config(path: Optional[str | os.PathLike[str]] = None) -> AppConfig:
+    """Load configuration.
+
+    If path is None, tries configs/config.yaml; if it doesn't exist,
+    falls back to configs/config.example.yaml.
+    """
     load_dotenv()  # optional .env
 
-    with open(path, "r", encoding="utf-8") as f:
+    if path is None:
+        primary = Path("configs/config.yaml")
+        fallback = Path("configs/config.example.yaml")
+        p = primary if primary.exists() else fallback
+    else:
+        p = Path(path)
+
+    with open(p, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
     cfg = AppConfig(**raw)
@@ -145,4 +157,3 @@ def load_config(path: str | os.PathLike[str]) -> AppConfig:
     cfg.promoted_bot.name = promoted_name
 
     return cfg
-

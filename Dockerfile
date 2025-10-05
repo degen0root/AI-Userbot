@@ -39,5 +39,8 @@ RUN pip install psutil
 HEALTHCHECK --interval=5m --timeout=10s --start-period=30s --retries=3 \
     CMD python scripts/healthcheck.py || exit 1
 
-# Запуск приложения
-CMD ["python", "run.py"]
+# Entrypoint to ensure config exists
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
