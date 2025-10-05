@@ -73,41 +73,16 @@ async def main() -> int:
         api_hash=api_hash,
     )
 
-    # Start client to receive updates/handlers
-    await app.start()
+    # Connect without triggering phone-code login
+    await app.connect()
     # Already logged in?
     try:
         await app.get_me()
         print("Already authorized; session is valid.")
-        await app.stop()
+        await app.disconnect()
         return 0
     except Exception:
         pass
-
-    done = asyncio.Event()
-
-    @app.on_raw_update()
-    async def _on_raw_update(_, update, __):  # type: ignore[no-redef]
-        if isinstance(update, UpdateLoginToken):
-            try:
-                res2 = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
-                if isinstance(res2, auth_types.LoginTokenSuccess):
-                    print("QR login completed ✔")
-                    done.set()
-                elif isinstance(res2, auth_types.LoginTokenMigrateTo):
-                    # Switch DC and import token (Pyrogram handles routing internally)
-                    imported = await app.invoke(ImportLoginToken(token=res2.token))
-                    if isinstance(imported, auth_types.LoginTokenSuccess):
-                        print("QR login completed after DC migrate ✔")
-                        done.set()
-                    elif isinstance(imported, auth_types.LoginToken):
-                        deeplink = f"tg://login?token={_b64url_no_pad(imported.token)}"
-                        _print_qr(deeplink)
-                elif isinstance(res2, auth_types.LoginToken):
-                    deeplink = f"tg://login?token={_b64url_no_pad(res2.token)}"
-                    _print_qr(deeplink)
-            except Exception as e:
-                print(f"Error during finalize: {e}", file=sys.stderr)
 
     # First export
     try:
@@ -120,35 +95,56 @@ async def main() -> int:
     if isinstance(res, auth_types.LoginToken):
         deeplink = f"tg://login?token={_b64url_no_pad(res.token)}"
         _print_qr(deeplink)
+        # Poll until success
+        print("Waiting for QR to be scanned…")
+        while True:
+            await asyncio.sleep(2)
+            res2 = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
+            if isinstance(res2, auth_types.LoginTokenSuccess):
+                print("QR login completed ✔")
+                break
+            elif isinstance(res2, auth_types.LoginTokenMigrateTo):
+                imported = await app.invoke(ImportLoginToken(token=res2.token))
+                if isinstance(imported, auth_types.LoginTokenSuccess):
+                    print("QR login completed after DC migrate ✔")
+                    break
+                elif isinstance(imported, auth_types.LoginToken):
+                    deeplink = f"tg://login?token={_b64url_no_pad(imported.token)}"
+                    _print_qr(deeplink)
+            elif isinstance(res2, auth_types.LoginToken):
+                # Still waiting; optionally refresh QR
+                pass
     elif isinstance(res, auth_types.LoginTokenMigrateTo):
         imported = await app.invoke(ImportLoginToken(token=res.token))
-        if isinstance(imported, auth_types.LoginToken):
+        if isinstance(imported, auth_types.LoginTokenSuccess):
+            print("QR login completed immediately after DC migrate ✔")
+        elif isinstance(imported, auth_types.LoginToken):
             deeplink = f"tg://login?token={_b64url_no_pad(imported.token)}"
             _print_qr(deeplink)
-        elif isinstance(imported, auth_types.LoginTokenSuccess):
-            print("QR login completed immediately after DC migrate ✔")
-            done.set()
-        else:
-            print("Unexpected importLoginToken result; retry later.", file=sys.stderr)
-            await app.stop()
-            return 4
+            print("Waiting for QR to be scanned…")
+            while True:
+                await asyncio.sleep(2)
+                res2 = await app.invoke(ExportLoginToken(api_id=api_id, api_hash=api_hash, except_ids=[]))
+                if isinstance(res2, auth_types.LoginTokenSuccess):
+                    print("QR login completed ✔")
+                    break
     else:
         print("Unexpected exportLoginToken result; retry later.", file=sys.stderr)
-        await app.stop()
+        await app.disconnect()
         return 5
-
-    print("Waiting for QR to be scanned…")
-    await done.wait()
 
     # Confirm and save
     try:
+        # Reconnect to ensure session reflects new auth
+        await app.disconnect()
+        await app.connect()
         me = await app.get_me()
         print(f"Authorized as: {getattr(me, 'first_name', '')} ({getattr(me, 'id', '')})")
         print("Saved session.")
-    except Exception:
-        print("Authorized, but couldn't fetch profile — continuing.")
+    except Exception as e:
+        print(f"Authorized, but couldn't fetch profile — continuing. ({e})")
 
-    await app.stop()
+    await app.disconnect()
     return 0
 
 
