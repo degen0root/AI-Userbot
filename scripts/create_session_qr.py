@@ -20,6 +20,7 @@ from pathlib import Path
 import qrcode
 from pyrogram import Client
 from pyrogram.raw.functions.auth import ExportLoginToken, ImportLoginToken
+from pyrogram.errors import RPCError
 from pyrogram.raw.types import UpdateLoginToken
 from pyrogram.raw.types import auth as auth_types
 
@@ -102,7 +103,12 @@ async def main() -> int:
                 print("QR login completed ✔")
                 break
             elif isinstance(res2, auth_types.LoginTokenMigrateTo):
-                imported = await app.invoke(ImportLoginToken(token=res2.token))
+                try:
+                    imported = await app.invoke(ImportLoginToken(token=res2.token))
+                except RPCError as e:
+                    # Token likely expired; continue loop to get a fresh token
+                    print(f"ImportLoginToken error: {e}; refreshing QR…")
+                    imported = None
                 if isinstance(imported, auth_types.LoginTokenSuccess):
                     print("QR login completed after DC migrate ✔")
                     break
