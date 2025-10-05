@@ -88,24 +88,53 @@ async def main():
         
         # Wait for authorization
         print("\n⏳ Please scan the QR code in Telegram and complete authorization...")
-        print("The script will automatically check for authorization in 30 seconds...")
+        print("The script will check for authorization status...")
 
-        # Wait 30 seconds for user to scan and authorize
-        await asyncio.sleep(30)
+        # Check authorization status periodically
+        max_attempts = 60  # 3 minutes timeout
+        for attempt in range(max_attempts):
+            await asyncio.sleep(3)
 
-        # Now check if we're authorized
-        try:
-            # Disconnect and reconnect with fresh session
-            await app.disconnect()
-            await app.connect()
+            try:
+                # Try to import the login token
+                result = await app.invoke(
+                    functions.auth.ImportLoginToken(
+                        token=r.token
+                    )
+                )
 
-            # Try to get user info - if this works, we're authorized
-            me = await app.get_me()
-            print(f"\n✅ Successfully logged in as: {me.first_name} (@{me.username})")
+                if isinstance(result, types.auth.LoginTokenSuccess):
+                    print(f"\n✅ Authorization successful!")
 
-        except Exception as e:
-            print(f"\n❌ Authorization failed: {e}")
-            print("❌ Please try again or check if the QR code was scanned correctly")
+                    # Disconnect and reconnect with fresh session
+                    await app.disconnect()
+                    await app.connect()
+
+                    # Try to get user info
+                    me = await app.get_me()
+                    print(f"✅ Successfully logged in as: {me.first_name} (@{me.username})")
+                    break
+
+                elif attempt == max_attempts - 1:
+                    print(f"\n❌ Authorization timeout")
+                    await app.disconnect()
+                    return 1
+
+            except Exception as e:
+                # Check if we can get user info now
+                try:
+                    me = await app.get_me()
+                    print(f"\n✅ Successfully logged in as: {me.first_name} (@{me.username})")
+                    break
+                except:
+                    if attempt == max_attempts - 1:
+                        print(f"\n❌ Authorization failed: {e}")
+                        await app.disconnect()
+                        return 1
+                    continue
+
+        if attempt >= max_attempts:
+            print("\n❌ Authorization timeout")
             await app.disconnect()
             return 1
                 
