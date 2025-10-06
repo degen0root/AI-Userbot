@@ -61,7 +61,13 @@ class UserBot:
     
     async def start(self):
         """Start the userbot"""
-        await self.client.start()
+        # Connect to Telegram (don't use start() as it tries to auth even with existing session)
+        await self.client.connect()
+        if not await self.client.is_user_authorized():
+            # If not authorized, start the auth process
+            await self.client.start()
+        else:
+            log.info("UserBot connected with existing session")
         log.info("UserBot started successfully")
 
         # Load previously active chats from database
