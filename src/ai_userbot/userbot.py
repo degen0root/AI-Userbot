@@ -5,20 +5,16 @@ import logging
 import random
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional
 import pytz
 
 from telethon import TelegramClient, events, types, errors
-from telethon.tl.types import Message, Chat, User
 from telethon.tl.functions.channels import JoinChannelRequest
-# MessageId is not directly available, we'll use message.id instead
-from telethon.tl.functions import contacts
 
 from .config import AppConfig
-from .llm import LLMClient, LLMRequest
-from .database import ChatDatabase, ChatInfo, MessageContext
+from .llm import LLMClient
+from .database import ChatDatabase, MessageContext
 from .persona import PersonaManager
-from .promoted_bot_context import get_bot_context, get_relevant_features, generate_natural_mention
 from .chat_rules import ChatRulesAnalyzer
 
 log = logging.getLogger(__name__)
@@ -42,29 +38,153 @@ class UserBot:
         )
         
         # State tracking
-        self.active_chats: Set[int] = set()
+        self.active_chats: set = set()
         self.last_message_time: Dict[int, float] = {}
         self.messages_per_hour: Dict[int, List[float]] = {}
         self.is_typing: Dict[int, bool] = {}
         self.chat_rules_cache: Dict[int, Dict[str, bool]] = {}  # Cache analyzed rules
 
-        # Cache for user info to avoid repeated API calls
+        # Cache for user info and entities to avoid repeated API calls
         self._user_info_cache: Optional[types.User] = None
+        self._entity_cache: Dict[int, types.InputPeer] = {}
+        self._message_cache: Dict[Tuple[int, int], types.Message] = {}  # (chat_id, message_id) -> message
+
+        # Monitoring and statistics
+        self._stats = {
+            "messages_sent": 0,
+            "messages_received": 0,
+            "errors": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "api_calls": 0,
+            "start_time": time.time()
+        }
 
         # Setup handlers
         self._setup_handlers()
 
-    async def get_me_cached(self) -> types.User:
+    async def get_me_cached(self):
         """Get cached user info, fetch from API if not cached"""
         if self._user_info_cache is None:
+            self._record_cache_miss()
+            self._record_api_call()
             self._user_info_cache = await self.client.get_me()
+        else:
+            self._record_cache_hit()
         return self._user_info_cache
-    
+
+    async def get_entity_cached(self, entity_id: int):
+        """Get cached entity, fetch from API if not cached"""
+        if entity_id not in self._entity_cache:
+            self._record_cache_miss()
+            try:
+                self._record_api_call()
+                entity = await self.client.get_entity(entity_id)
+                self._entity_cache[entity_id] = entity
+            except (errors.AuthKeyInvalidError, errors.SessionPasswordNeededError) as e:
+                log.error(f"Authentication error getting entity {entity_id}: {e}")
+                self._increment_stat("errors")
+                # Don't cache auth errors
+                return None
+            except errors.FloodWaitError as e:
+                log.warning(f"FloodWait getting entity {entity_id}: waiting {e.seconds}s")
+                self._increment_stat("errors")
+                await asyncio.sleep(e.seconds)
+                # Retry once after waiting
+                try:
+                    self._record_api_call()
+                    entity = await self.client.get_entity(entity_id)
+                    self._entity_cache[entity_id] = entity
+                except Exception as retry_e:
+                    log.error(f"Failed to get entity {entity_id} after retry: {retry_e}")
+                    return None
+            except Exception as e:
+                log.warning(f"Failed to get entity {entity_id}: {e}")
+                self._increment_stat("errors")
+                return None
+        else:
+            self._record_cache_hit()
+        return self._entity_cache.get(entity_id)
+
+    async def get_message_cached(self, chat_id: int, message_id: int):
+        """Get cached message, fetch from API if not cached"""
+        cache_key = (chat_id, message_id)
+        if cache_key not in self._message_cache:
+            self._record_cache_miss()
+            try:
+                self._record_api_call()
+                message = await self.client.get_messages(chat_id, ids=message_id)
+                if message:
+                    self._message_cache[cache_key] = message
+            except (errors.AuthKeyInvalidError, errors.SessionPasswordNeededError) as e:
+                log.error(f"Authentication error getting message {chat_id}:{message_id}: {e}")
+                self._increment_stat("errors")
+                # Don't cache auth errors
+                return None
+            except errors.FloodWaitError as e:
+                log.warning(f"FloodWait getting message {chat_id}:{message_id}: waiting {e.seconds}s")
+                self._increment_stat("errors")
+                await asyncio.sleep(e.seconds)
+                # Retry once after waiting
+                try:
+                    self._record_api_call()
+                    message = await self.client.get_messages(chat_id, ids=message_id)
+                    if message:
+                        self._message_cache[cache_key] = message
+                except Exception as retry_e:
+                    log.error(f"Failed to get message {chat_id}:{message_id} after retry: {retry_e}")
+                    return None
+            except Exception as e:
+                log.warning(f"Failed to get message {chat_id}:{message_id}: {e}")
+                self._increment_stat("errors")
+                return None
+        else:
+            self._record_cache_hit()
+        return self._message_cache.get(cache_key)
+
+    def _increment_stat(self, stat_name: str, value: int = 1):
+        """Increment monitoring statistic"""
+        self._stats[stat_name] += value
+
+    def _record_api_call(self):
+        """Record an API call for monitoring"""
+        self._increment_stat("api_calls")
+
+    def _record_cache_hit(self):
+        """Record a cache hit"""
+        self._increment_stat("cache_hits")
+
+    def _record_cache_miss(self):
+        """Record a cache miss"""
+        self._increment_stat("cache_misses")
+
+    def get_stats(self) -> Dict[str, any]:
+        """Get current bot statistics"""
+        uptime = time.time() - self._stats["start_time"]
+
+        return {
+            **self._stats,
+            "uptime_seconds": uptime,
+            "cache_hit_rate": (
+                self._stats["cache_hits"] / (self._stats["cache_hits"] + self._stats["cache_misses"])
+                if (self._stats["cache_hits"] + self._stats["cache_misses"]) > 0 else 0
+            ),
+            "messages_per_hour": (
+                self._stats["messages_sent"] / (uptime / 3600)
+                if uptime > 0 else 0
+            ),
+            "error_rate": (
+                self._stats["errors"] / self._stats["api_calls"]
+                if self._stats["api_calls"] > 0 else 0
+            )
+        }
+
     def _setup_handlers(self):
         """Setup message handlers"""
         # Handle messages in groups and personal messages
         @self.client.on(events.NewMessage(chats=None, incoming=True))
-        async def on_message(event: events.NewMessage.Event):
+        async def on_message(event):
+            self._increment_stat("messages_received")
             if event.is_group:
                 await self._handle_group_message(event)
             elif self.config.telegram.respond_to_personal_messages and not event.is_group:
@@ -72,13 +192,13 @@ class UserBot:
 
         # Handle replies and mentions in groups
         @self.client.on(events.NewMessage(chats=None, incoming=True))
-        async def on_mention_or_reply(event: events.NewMessage.Event):
+        async def on_mention_or_reply(event):
             if event.is_group and await self._is_mention_or_reply_to_bot(event):
                 await self._handle_mention_or_reply(event)
 
         # Handle when bot is added to a new chat
         @self.client.on(events.ChatAction)
-        async def on_chat_action(event: events.ChatAction.Event):
+        async def on_chat_action(event):
             if event.user_added and event.user_id == (await self.get_me_cached()).id:
                 log.info(f"Bot was added to chat {event.chat_id}")
                 await self._handle_new_chat_joined(event.chat_id)
@@ -86,7 +206,7 @@ class UserBot:
                 log.info(f"Bot was removed from chat {event.chat_id}")
                 await self._handle_chat_left(event.chat_id)
 
-    async def _handle_personal_message(self, event: events.NewMessage.Event):
+    async def _handle_personal_message(self, event):
         """Handle personal messages (DMs)"""
         if not self.config.telegram.respond_to_personal_messages:
             return
@@ -122,6 +242,7 @@ class UserBot:
             if response:
                 try:
                     await self.client.send_message(sender.id, response)
+                    self._increment_stat("messages_sent")
 
                     # Log the response
                     await self.db.log_message(
@@ -137,14 +258,14 @@ class UserBot:
                 except Exception as e:
                     log.error(f"Error sending personal response: {e}")
 
-    async def _is_mention_or_reply_to_bot(self, event: events.NewMessage.Event) -> bool:
+    async def _is_mention_or_reply_to_bot(self, event) -> bool:
         """Check if message is a mention or reply to the bot"""
         message = event.message
 
         # Check if it's a reply to bot's message
         if message.reply_to_msg_id:
             try:
-                reply_msg = await self.client.get_messages(event.chat_id, ids=message.reply_to_msg_id)
+                reply_msg = await self.get_message_cached(event.chat_id, message.reply_to_msg_id)
                 if reply_msg and reply_msg.from_id == (await self.get_me_cached()).id:
                     return True
             except Exception as e:
@@ -158,7 +279,7 @@ class UserBot:
 
         return False
 
-    async def _handle_mention_or_reply(self, event: events.NewMessage.Event):
+    async def _handle_mention_or_reply(self, event):
         """Handle mentions and replies to the bot"""
         message = event.message
         chat_id = event.chat_id
@@ -192,6 +313,7 @@ class UserBot:
         # Send response
         try:
             await self.client.send_message(chat_id, response)
+            self._increment_stat("messages_sent")
 
             # Log the response
             await self.db.log_message(
@@ -208,7 +330,7 @@ class UserBot:
         except Exception as e:
             log.error(f"Error sending response to chat {chat_id}: {e}")
 
-    def _is_potential_spam(self, message, message_analysis: dict) -> bool:
+    def _is_potential_spam(self, message, message_analysis) -> bool:
         """Check if message looks like spam"""
         text = message.text or ""
 
@@ -233,7 +355,7 @@ class UserBot:
 
         return False
 
-    async def _update_persona_experience(self, text: str, is_personal: bool = False):
+    async def _update_persona_experience(self, text, is_personal=False):
         """Update persona experience from interactions"""
         try:
             # Extract topics and themes from the text
@@ -273,7 +395,7 @@ class UserBot:
         except Exception as e:
             log.error(f"Error updating persona experience: {e}")
 
-    def _extract_topics_from_text(self, text: str) -> List[str]:
+    def _extract_topics_from_text(self, text: str):
         """Extract topics and themes from text"""
         topics = []
 
@@ -304,7 +426,7 @@ class UserBot:
         # Implementation depends on how persona data is stored
         pass
 
-    async def join_chats_by_list(self, chat_list: List[str]):
+    async def join_chats_by_list(self, chat_list):
         """Join multiple chats by their usernames or IDs"""
         joined_count = 0
 
@@ -313,9 +435,9 @@ class UserBot:
                 # Try to get chat entity
                 try:
                     if chat_identifier.startswith('@'):
-                        chat = await self.client.get_entity(chat_identifier)
+                        chat = await self.get_entity_cached(chat_identifier)
                     else:
-                        chat = await self.client.get_entity(int(chat_identifier))
+                        chat = await self.get_entity_cached(int(chat_identifier))
                 except Exception as e:
                     log.warning(f"Could not find chat {chat_identifier}: {e}")
                     continue
@@ -413,7 +535,7 @@ class UserBot:
         except Exception as e:
             log.error(f"Error joining predefined chats: {e}")
 
-    async def _should_respond_to_personal(self, sender, message) -> bool:
+    async def _should_respond_to_personal(self, sender, message):
         """Determine if we should respond to a personal message"""
         # Don't respond to our own messages
         if sender and sender.id == (await self.get_me_cached()).id:
@@ -431,7 +553,7 @@ class UserBot:
 
         return True
 
-    async def _check_personal_hourly_limit(self, user_id: int) -> bool:
+    async def _check_personal_hourly_limit(self, user_id):
         """Check if we've reached the hourly limit for personal messages to this user"""
         current_time = datetime.now()
         hour_start = current_time.replace(minute=0, second=0, microsecond=0)
@@ -441,7 +563,7 @@ class UserBot:
 
         return len(recent_messages) < self.config.telegram.max_personal_replies_per_hour
 
-    async def _generate_personal_response(self, message) -> Optional[str]:
+    async def _generate_personal_response(self, message):
         """Generate response to personal message"""
         try:
             context = f"Пользователь написал: {message.text or ''}"
@@ -486,11 +608,11 @@ class UserBot:
         await self.client.disconnect()
         log.info("UserBot stopped")
 
-    async def _handle_new_chat_joined(self, chat_id: int):
+    async def _handle_new_chat_joined(self, chat_id):
         """Handle when bot is added to a new chat"""
         try:
             # Get chat info
-            chat = await self.client.get_entity(chat_id)
+            chat = await self.get_entity_cached(chat_id)
             if not chat:
                 return
 
@@ -524,13 +646,13 @@ class UserBot:
         except Exception as e:
             log.error(f"Error handling new chat {chat_id}: {e}")
 
-    async def _handle_chat_left(self, chat_id: int):
+    async def _handle_chat_left(self, chat_id):
         """Handle when bot leaves a chat"""
         self.active_chats.discard(chat_id)
         await self.db.deactivate_chat(chat_id)
         log.info(f"Left chat {chat_id}")
 
-    def _is_suitable_chat(self, chat) -> bool:
+    def _is_suitable_chat(self, chat):
         """Check if chat meets our criteria"""
         # Must be a group/supergroup
         if not hasattr(chat, 'megagroup') and not (hasattr(chat, 'broadcast') and not chat.broadcast):
@@ -569,7 +691,7 @@ class UserBot:
 
         return False
 
-    def _generate_search_variations(self, keyword: str) -> List[str]:
+    def _generate_search_variations(self, keyword):
         """Generate search variations for better chat discovery"""
         variations = []
 
@@ -676,7 +798,7 @@ class UserBot:
                 "chat_type": "error"
             }
 
-    async def _analyze_chat_content_deep(self, chat, recent_messages: List[str]) -> dict:
+    async def _analyze_chat_content_deep(self, chat, recent_messages):
         """Deep AI analysis of chat content after joining"""
         try:
             # Combine recent messages for analysis
@@ -750,7 +872,7 @@ class UserBot:
                 "reason": f"Ошибка анализа содержимого: {e}"
             }
     
-    def _get_chat_category(self, chat_title: str) -> str:
+    def _get_chat_category(self, chat_title):
         """Determine chat category based on title"""
         title_lower = chat_title.lower() if chat_title else ""
         
@@ -760,7 +882,7 @@ class UserBot:
         
         return "general"
     
-    def _is_active_time(self) -> bool:
+    def _is_active_time(self):
         """Check if current time is within active hours"""
         tz = pytz.timezone(self.config.policy.timezone)
         now = datetime.now(tz)
@@ -789,7 +911,7 @@ class UserBot:
         
         return True
     
-    async def _handle_group_message(self, event: events.NewMessage.Event):
+    async def _handle_group_message(self, event):
         """Handle incoming group messages"""
         message = event.message
         chat_id = message.chat_id
@@ -842,6 +964,7 @@ class UserBot:
         # Send response
         try:
             await self.client.send_message(chat_id, response)
+            self._increment_stat("messages_sent")
 
             # Update tracking
             now = time.time()
@@ -865,7 +988,7 @@ class UserBot:
         except Exception as e:
             log.error(f"Error sending message to chat {chat_id}: {e}")
 
-    async def _should_respond(self, chat_id: int, message, message_analysis: dict = None) -> bool:
+    async def _should_respond(self, chat_id, message, message_analysis=None):
         """Decide if bot should respond to the message (enhanced with AI analysis)"""
         # Check rate limits
         if not self._check_rate_limits(chat_id):
@@ -902,7 +1025,7 @@ class UserBot:
 
         # Fallback to old logic if AI analysis fails
         try:
-            chat = await self.client.get_entity(chat_id)
+            chat = await self.get_entity_cached(chat_id)
             chat_title = chat.title if hasattr(chat, 'title') else ""
         except:
             chat_title = ""
@@ -915,7 +1038,7 @@ class UserBot:
         relevance = await self._calculate_relevance(message, context)
 
         # Adjust chance based on chat category
-        base_chance = self.config.policy.response_probability[chat_category]
+        base_chance = self.config.policy.response_probability.get(chat_category, 0.5)
 
         # Boost if message mentions persona interests
         if any(interest in (message.text or "").lower() for interest in self.persona.interests):
@@ -923,14 +1046,14 @@ class UserBot:
 
         # Boost if replied to bot
         if message.reply_to_msg_id:
-            reply_msg = await self.client.get_messages(chat_id, ids=message.reply_to_msg_id)
+            reply_msg = await self.get_message_cached(chat_id, message.reply_to_msg_id)
             if reply_msg.from_id == (await self.get_me_cached()).id:
                 base_chance *= 2.0
 
         # Random decision based on chance
-            return random.random() < base_chance and relevance > self.config.policy.min_relevance_score
+            return random.random() < base_chance and relevance > self.config.policy.relevance_threshold
 
-    async def _analyze_message_tone(self, message, chat_id: int) -> dict:
+    async def _analyze_message_tone(self, message, chat_id):
         """Analyze message tone and relevance using AI"""
         try:
             message_text = message.text or ""
@@ -994,7 +1117,7 @@ class UserBot:
                 "reason": f"Ошибка анализа: {e}"
             }
 
-    def _check_rate_limits(self, chat_id: int) -> bool:
+    def _check_rate_limits(self, chat_id):
         """Check if we can send a message without violating rate limits"""
         now = time.time()
         
@@ -1031,7 +1154,7 @@ class UserBot:
         async with self.client.action(chat_id, 'typing'):
             await asyncio.sleep(typing_time)
 
-    async def _generate_response(self, chat_id: int, message: Message) -> Optional[str]:
+    async def _generate_response(self, chat_id, message):
         """Generate a natural response using LLM"""
         # Get recent context for human-like response
         context_messages = await self.db.get_recent_messages(chat_id, limit=5)
@@ -1043,7 +1166,7 @@ class UserBot:
         # Generate human-like response
         return await self._generate_human_like_response(context, chat_id)
 
-    async def _calculate_relevance(self, message: Message, context: List[MessageContext]) -> float:
+    async def _calculate_relevance(self, message, context):
         """Calculate how relevant the message is to persona interests"""
         text = message.text or ""
         score = 0.0
@@ -1127,7 +1250,7 @@ class UserBot:
             sleep_time = self.config.telegram.chat_discovery_interval + random.uniform(-300, 300)
             await asyncio.sleep(sleep_time)
 
-    async def _find_new_chats(self) -> List[Chat]:
+    async def _find_new_chats(self):
         """Find new open chats based on keywords"""
         new_chats = []
         
@@ -1168,7 +1291,7 @@ class UserBot:
                     # Method 2: Try to find public chats by username patterns
                     if keyword.startswith('@'):
                         try:
-                            entity = await self.client.get_entity(keyword)
+                            entity = await self.get_entity_cached(keyword)
                             if (entity and self._is_suitable_chat(entity) and
                                 entity.id not in self.active_chats):
                                 chats_found.add(entity.id)
@@ -1279,7 +1402,7 @@ class UserBot:
                 log.error(f"Error in activity scheduler: {e}")
                 await asyncio.sleep(1800)
 
-    def _is_active_time(self, current_time: datetime) -> bool:
+    def _is_active_time(self, current_time):
         """Check if current time is within active hours"""
         hour = current_time.hour
 
@@ -1324,6 +1447,7 @@ class UserBot:
 
                     # Send message
                     await self.client.send_message(chat_id, response)
+                    self._increment_stat("messages_sent")
 
                     # Update statistics
                     await self.db.log_message(
@@ -1350,7 +1474,7 @@ class UserBot:
 
         return "\n".join(context_parts) if context_parts else "Начало разговора"
 
-    async def _generate_human_like_response(self, context: str, chat_id: int) -> str:
+    async def _generate_human_like_response(self, context, chat_id):
         """Generate human-like response with typos and variations"""
         try:
             # Get base response from LLM
@@ -1372,7 +1496,7 @@ class UserBot:
             log.error(f"Error generating response: {e}")
             return None
 
-    def _add_human_variations(self, text: str) -> str:
+    def _add_human_variations(self, text):
         """Add human-like variations to text (typos, length variations, etc.)"""
         # Length variation
         if random.random() < self.config.policy.message_length_variation:
@@ -1395,7 +1519,7 @@ class UserBot:
 
         return text
 
-    def _add_typo(self, text: str) -> str:
+    def _add_typo(self, text):
         """Add a random typo to text"""
         if len(text) < 5:
             return text
@@ -1425,7 +1549,7 @@ class UserBot:
 
         return " ".join(words)
 
-    async def _check_hourly_limit(self, chat_id: int) -> bool:
+    async def _check_hourly_limit(self, chat_id):
         """Check if we've reached the hourly message limit for this chat"""
         current_time = datetime.now()
         hour_start = current_time.replace(minute=0, second=0, microsecond=0)

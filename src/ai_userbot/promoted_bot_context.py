@@ -176,12 +176,7 @@ MOON_TEMPLE_BOT_CONTEXT = {
 LUNA_BOT_CONTEXT = MOON_TEMPLE_BOT_CONTEXT
 
 
-def get_bot_context():
-    """Get the full context about promoted bot"""
-    return MOON_TEMPLE_BOT_CONTEXT
-
-
-def get_relevant_features(keywords: list) -> dict:
+# Функции get_bot_context и get_relevant_features удалены - не используются
     """Get relevant bot features based on conversation keywords"""
     relevant = {}
     context = MOON_TEMPLE_BOT_CONTEXT
@@ -213,72 +208,7 @@ def get_relevant_features(keywords: list) -> dict:
     return relevant
 
 
-def generate_natural_mention(topic: str = None, context_words: list = None) -> str:
-    """Generate a natural mention of the bot based on topic"""
-    import random
-    
-    context = MOON_TEMPLE_BOT_CONTEXT
-    mention_templates = context["natural_mentions"]
-    
-    # Select appropriate template
-    template = random.choice(mention_templates)
-    
-    # Fill in placeholders
-    username = context["username"]
-    name = context["name"]
-    
-    # Select relevant feature based on topic or context
-    if topic or context_words:
-        # Get relevant features
-        keywords = [topic.lower()] if topic else []
-        if context_words:
-            keywords.extend([w.lower() for w in context_words])
-        
-        relevant_features = get_relevant_features(keywords)
-        
-        if relevant_features:
-            # Pick a feature description
-            feature_key = random.choice(list(relevant_features.keys()))
-            if not feature_key.startswith("hooks_"):
-                feature = relevant_features[feature_key]["description"]
-            else:
-                # Use first hook as feature description
-                hooks = relevant_features[feature_key]
-                feature = hooks[0] if hooks else "персональные рекомендации под цикл и луну"
-        else:
-            feature = "персональные рекомендации под женский цикл и лунные ритмы"
-    else:
-        # Random feature
-        features = [details["description"] for details in context["main_features"].values()]
-        feature = random.choice(features)
-    
-    # Determine purpose based on feature
-    purposes = {
-        "рекомендации": "жизни в гармонии с циклом",
-        "календарь": "планирования по луне",
-        "цикл": "отслеживания женского здоровья",
-        "подсказки": "духовных практик",
-        "уведомления": "важных напоминаний"
-    }
-    
-    purpose = "синхронизации с природными ритмами"  # default
-    for key, value in purposes.items():
-        if key in feature.lower():
-            purpose = value
-            break
-    
-    # Format the mention
-    mention = template.format(
-        username=username,
-        name=name,
-        feature=feature,
-        purpose=purpose
-    )
-    
-    return mention
-
-
-def should_mention_feature(conversation_context: str, feature: str) -> bool:
+# Функции generate_natural_mention, should_mention_feature удалены - не используются
     """Determine if a specific bot feature should be mentioned based on context"""
     context_lower = conversation_context.lower()
     feature_data = MOON_TEMPLE_BOT_CONTEXT["main_features"].get(feature)
@@ -301,23 +231,4 @@ def should_mention_feature(conversation_context: str, feature: str) -> bool:
     return False
 
 
-def get_feature_benefit(feature_key: str) -> str:
-    """Get the benefit description for a specific feature"""
-    feature_data = MOON_TEMPLE_BOT_CONTEXT["main_features"].get(feature_key)
-    if feature_data:
-        return feature_data.get("benefits", "")
-    return ""
-
-
-def is_relevant_to_audience(conversation_context: str) -> bool:
-    """Check if conversation is relevant to bot's target audience"""
-    context_lower = conversation_context.lower()
-    
-    # Keywords that indicate target audience
-    audience_keywords = [
-        "женщин", "девушк", "девочк", "цикл", "месячн", "пмс", "овуляц",
-        "луна", "лунн", "астролог", "гороскоп", "медитац", "йога",
-        "женское здоровье", "гормон", "фаза", "критические дни"
-    ]
-    
-    return any(keyword in context_lower for keyword in audience_keywords)
+# Функция is_relevant_to_audience удалена - не используется

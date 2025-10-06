@@ -216,7 +216,22 @@ class ChatDatabase:
                 for msg in reversed(messages)
             ]
     
-    async def log_bot_message(self, chat_id: int, message_text: str, 
+    async def log_message(self, chat_id: int, user_id: int, message_text: str,
+                         is_bot_message: bool = False, username: Optional[str] = None):
+        """Log any message to the database"""
+        async with self.async_session() as session:
+            message = MessageRecord(
+                chat_id=chat_id,
+                user_id=user_id,
+                username=username,
+                message_text=message_text[:1000],  # Limit text length
+                timestamp=datetime.utcnow(),
+                is_bot_message=is_bot_message
+            )
+            session.add(message)
+            await session.commit()
+
+    async def log_bot_message(self, chat_id: int, message_text: str,
                             includes_promotion: bool = False,
                             response_time_seconds: float = 0):
         """Log bot's message and update statistics"""

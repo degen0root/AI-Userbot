@@ -28,3 +28,6 @@ aiosqlite>=0.20.0
 aiofiles>=24.0.0
 python-dateutil>=2.9.0
 pytz>=2024.1
+
+# Security
+cryptography>=41.0.0

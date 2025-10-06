@@ -38,7 +38,7 @@ class TelegramSection(BaseModel):
     session_name: str = Field(default="userbot_session")
     
     # Chat search settings
-    search_keywords: List[str] = Field(default_factory=lambda: [
+    search_keywords: List[str] = Field(default=[
         "женский", "девушки", "подруги", "мамочки", "женщины",
         "бали", "балифорум", "таиланд", "путешествия", "travel",
         "москва", "moscow", "спб", "питер", "россия",
@@ -49,7 +49,7 @@ class TelegramSection(BaseModel):
     max_members: int = Field(default=10000)
     
     # Chat categories
-    chat_categories: Dict[str, List[str]] = Field(default_factory=lambda: {
+    chat_categories: Dict[str, List[str]] = Field(default={
         "women": ["женский", "девушки", "мамочки", "женщины"],
         "travel": ["бали", "travel", "путешеств", "таиланд", "азия"],
         "local": ["москва", "moscow", "мск"],
@@ -57,17 +57,14 @@ class TelegramSection(BaseModel):
     })
     
     # Manual chat joining settings
-    predefined_chats: List[str] = Field(default_factory=lambda: [
-        # Load from targets.txt file if it exists
-        *(_load_targets_from_file() if _file_exists("scripts/targets.txt") else [])
-    ])
+    predefined_chats: List[str] = Field(default=[])
     auto_join_predefined_chats: bool = True  # Auto-join predefined chats on startup
 
     # Personal messages settings
     respond_to_personal_messages: bool = True  # Whether to respond to personal messages
     max_personal_replies_per_hour: int = 10  # Max replies to personal messages per hour
 
-    # Daily activity settings (moved to PolicySection to avoid duplication)
+    # Daily activity settings - removed duplication with PolicySection
 
     # Old bot settings (kept for compatibility)
     allowed_chat_ids: List[int] = Field(default_factory=list)
@@ -98,19 +95,24 @@ class PolicySection(BaseModel):
     daily_message_target: int = 200  # Целевое количество сообщений в день
     max_chats_per_day: int = 50  # Максимум чатов для активности в день
     relevance_threshold: float = 0.25  # Более низкий порог для участия
-    response_probability: float = 0.7  # Вероятность ответа на сообщение (70%)
+    response_probability: Dict[str, float] = Field(default={
+        "women": 0.7,      # Женские чаты - активное участие
+        "travel": 0.5,     # Путешествия - умеренное участие
+        "local": 0.6,      # Локальные чаты - выше среднего
+        "general": 0.4     # Общие чаты - осторожное участие
+    })
     promotion_probability: float = 0.03  # 3% шанс упомянуть бота
     promotion_text: str = (
         "Кстати, недавно нашла классного бота @LunnyiHramBot - "
         "там и медитации, и лунный календарь, очень помогает 🌙"
     )
-    forbidden_terms: List[str] = Field(default_factory=lambda: [
+    forbidden_terms: List[str] = Field(default=[
         "18+", "NSFW", "политика", "продажа", "реклама"
     ])
     
     # Message timing
     typing_speed_wpm: int = 40  # Слов в минуту при "печатании"
-    reaction_delay_range: List[int] = Field(default_factory=lambda: [5, 30])  # секунды
+    reaction_delay_range: List[int] = Field(default=[5, 30])  # секунды
     min_typing_delay: int = 1  # Минимальная задержка печати в секундах
     max_typing_delay: int = 10  # Максимальная задержка печати в секундах
 
@@ -121,7 +123,7 @@ class PolicySection(BaseModel):
     
     # Time zone and schedule
     timezone: str = Field(default="Europe/Moscow")
-    active_hours: Dict[str, Union[int, List[int]]] = Field(default_factory=lambda: {
+    active_hours: Dict[str, Union[int, List[int]]] = Field(default={
         "wake_up": 8,
         "morning_active": [8, 12],
         "lunch_break": [12, 13],
@@ -138,7 +140,7 @@ class PolicySection(BaseModel):
     chat_discovery_interval: int = 1800  # 30 minutes between discovery cycles
     max_new_chats_per_cycle: int = 10  # Maximum new chats to join per cycle
     enable_external_chat_search: bool = False  # Enable external chat search resources
-    external_search_urls: List[str] = Field(default_factory=lambda: [
+    external_search_urls: List[str] = Field(default=[
         "https://telegramchannels.me/channels",
         "https://telegram-group.com/channels"
     ])
@@ -190,8 +192,7 @@ def load_config(path: Optional[str | os.PathLike[str]] = None) -> AppConfig:
     cfg.telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", cfg.telegram_bot_token)
     
     # Userbot credentials from env
-    api_id_str = os.getenv("TELEGRAM_API_ID", str(cfg.telegram.api_id or 0))
-    cfg.telegram.api_id = int(api_id_str) if api_id_str and api_id_str != "0" else 0
+    cfg.telegram.api_id = int(os.getenv("TELEGRAM_API_ID", cfg.telegram.api_id or 0))
     cfg.telegram.api_hash = os.getenv("TELEGRAM_API_HASH", cfg.telegram.api_hash)
     cfg.telegram.phone_number = os.getenv("TELEGRAM_PHONE_NUMBER", cfg.telegram.phone_number)
     

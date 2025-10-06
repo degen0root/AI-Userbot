@@ -14,6 +14,7 @@ from .config import load_config
 from .database import ChatDatabase
 from .llm import create_llm_client
 from .userbot import UserBot
+from .security import validate_environment_variables, SecretsManager
 
 
 console = Console()
@@ -60,12 +61,25 @@ class Application:
     async def initialize(self):
         """Initialize all components"""
         self.log.info("Initializing application", app_name=self.config.app.name)
-        
+
+        # Validate environment variables first
+        env_errors = validate_environment_variables()
+        if env_errors:
+            console.print("[red]Environment validation errors:[/red]")
+            for var, error in env_errors.items():
+                console.print(f"  • {var}: {error}")
+            console.print("\n[yellow]Please fix environment variables before running[/yellow]")
+            raise RuntimeError("Environment validation failed")
+
+        # Initialize secrets manager
+        self.secrets_manager = SecretsManager()
+        self.log.info("Security manager initialized")
+
         # Initialize database
         self.db = ChatDatabase()
         await self.db.initialize()
         self.log.info("Database initialized")
-        
+
         # Initialize LLM client
         llm_config = {
             "provider": self.config.llm.provider,
@@ -76,7 +90,7 @@ class Application:
         }
         self.llm = create_llm_client(llm_config)
         self.log.info("LLM client initialized", provider=self.config.llm.provider)
-        
+
         # Initialize userbot
         self.userbot = UserBot(self.config, self.llm, self.db)
         self.log.info("UserBot initialized")
@@ -113,33 +127,72 @@ class Application:
     async def shutdown(self):
         """Gracefully shutdown all components"""
         self.log.info("Shutting down application...")
-        
+
         if self.userbot:
             await self.userbot.stop()
-        
+
         if self.db:
             await self.db.close()
-        
+
+        # Clear any cached sensitive data
+        if hasattr(self, 'secrets_manager'):
+            # Note: Fernet doesn't need explicit cleanup, but we can clear references
+            pass
+
         self.log.info("Application shutdown complete")
     
     def _validate_config(self) -> bool:
         """Validate configuration before starting"""
         errors = []
-        
+
         # Check Telegram credentials
         if not self.config.telegram.api_id or self.config.telegram.api_id == 0:
             errors.append("TELEGRAM_API_ID not configured")
-        
+
         if not self.config.telegram.api_hash:
             errors.append("TELEGRAM_API_HASH not configured")
-        
+
         if not self.config.telegram.phone_number:
             errors.append("TELEGRAM_PHONE_NUMBER not configured")
-        
+
         # Check LLM configuration
         if self.config.llm.provider != "stub" and not self.config.llm.api_key:
             errors.append(f"{self.config.llm.provider.upper()}_API_KEY not configured")
-        
+
+        # Check response probability configuration
+        if not isinstance(self.config.policy.response_probability, dict):
+            errors.append("response_probability must be a dictionary with chat categories")
+        else:
+            required_categories = {"women", "travel", "local", "general"}
+            missing_categories = required_categories - set(self.config.policy.response_probability.keys())
+            if missing_categories:
+                errors.append(f"Missing response probability categories: {missing_categories}")
+
+        # Validate chat categories
+        if not isinstance(self.config.telegram.chat_categories, dict):
+            errors.append("chat_categories must be a dictionary")
+        else:
+            for category, keywords in self.config.telegram.chat_categories.items():
+                if not isinstance(keywords, list):
+                    errors.append(f"Keywords for category '{category}' must be a list")
+
+        # Validate active hours
+        if not isinstance(self.config.policy.active_hours, dict):
+            errors.append("active_hours must be a dictionary")
+        else:
+            required_times = {"wake_up", "morning_active", "lunch_break", "afternoon_active", "evening_active", "sleep_time"}
+            missing_times = required_times - set(self.config.policy.active_hours.keys())
+            if missing_times:
+                errors.append(f"Missing active hours configuration: {missing_times}")
+
+        # Validate forbidden terms
+        if not isinstance(self.config.policy.forbidden_terms, list):
+            errors.append("forbidden_terms must be a list")
+
+        # Validate search keywords
+        if not isinstance(self.config.telegram.search_keywords, list) or len(self.config.telegram.search_keywords) == 0:
+            errors.append("search_keywords must be a non-empty list")
+
         if errors:
             console.print("[red]Configuration errors:[/red]")
             for error in errors:
