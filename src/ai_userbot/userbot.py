@@ -376,9 +376,9 @@ class UserBot:
 
                 if result and hasattr(result, 'chats'):
                     for chat in result.chats:
-                    if chat.is_group and not chat.is_private and chat.is_joinable:
-                        if chat.id not in self.active_chats:
-                            new_chats.append(chat)
+                        if chat.is_group and not chat.is_private and chat.is_joinable:
+                            if chat.id not in self.active_chats:
+                                new_chats.append(chat)
             except Exception as e:
                 if hasattr(e, 'seconds'):
                     await asyncio.sleep(e.seconds)
