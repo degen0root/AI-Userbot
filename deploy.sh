@@ -5,10 +5,10 @@
 set -e
 
 # Colors for output
-GREEN="\\033[0;32m"
-YELLOW="\\033[1;33m"
-RED="\\033[0;31m"
-NC="\\033[0m" # No Color
+GREEN="\033[0;32m"
+YELLOW="\033[1;33m"
+RED="\033[0;31m"
+NC="\033[0m" # No Color
 
 # Configuration
 REMOTE_HOST="moon@103.76.86.123"
@@ -67,7 +67,7 @@ echo -e "${GREEN}Checking Telegram session on remote...${NC}"
 ssh "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker compose -f docker-compose.ai-userbot.yml down || true"
 
 # Determine session name from config (fallback to sessions/userbot_session)
-SESSION_NAME=$(ssh "$REMOTE_HOST" "awk -F': ' '/session_name:/ {print \\$2}' $REMOTE_DIR/configs/config.yaml 2>/dev/null | tr -d '\r\n\"' || true)
+SESSION_NAME=$(ssh "$REMOTE_HOST" "awk -F': ' '/session_name:/ {print \$2}' $REMOTE_DIR/configs/config.yaml 2>/dev/null | tr -d '\r\n\"' || true")
 if [ -z "$SESSION_NAME" ]; then SESSION_NAME="sessions/userbot_session"; fi
 SESSION_BASE=$(basename "$SESSION_NAME")
 REMOTE_SESSION_FILE="$REMOTE_DIR/sessions/${SESSION_BASE}.session"
