@@ -1292,30 +1292,25 @@ class UserBot:
                 # Enhanced chat search using multiple methods
                 chats_found = set()
 
+                # Method 1: Search existing dialogs (skip if not authorized)
                 try:
                     # Check if client is authorized before getting dialogs
-                    if not await self.client.is_user_authorized():
-                        log.warning(f"Client not authorized for dialogs search with keyword '{keyword}'")
-                        continue
+                    if await self.client.is_user_authorized():
+                        dialogs = await self.client.get_dialogs(limit=100)
 
-                    # Method 1: Search using get_dialogs (check existing dialogs)
-                    dialogs = await self.client.get_dialogs(limit=100)
+                        for dialog in dialogs:
+                            if (dialog.is_group and not dialog.is_channel and
+                                self._is_suitable_chat(dialog.entity) and
+                                dialog.entity.id not in self.active_chats):
 
-                    for dialog in dialogs:
-                        if (dialog.is_group and not dialog.is_channel and
-                            self._is_suitable_chat(dialog.entity) and
-                            dialog.entity.id not in self.active_chats):
+                                chats_found.add(dialog.entity.id)
+                                new_chats.append(dialog.entity)
+                                log.info(f"Found chat via dialogs: {getattr(dialog.entity, 'title', 'Unknown')} (@{getattr(dialog.entity, 'username', 'N/A')})")
+                    else:
+                        log.debug(f"Client not authorized for dialogs search with keyword '{keyword}'")
 
-                            chats_found.add(dialog.entity.id)
-                            new_chats.append(dialog.entity)
-                            log.info(f"Found chat via dialogs: {getattr(dialog.entity, 'title', 'Unknown')} (@{getattr(dialog.entity, 'username', 'N/A')})")
-
-                except errors.AuthKeyInvalidError as e:
+                except (errors.AuthKeyInvalidError, errors.SessionPasswordNeededError) as e:
                     log.error(f"Authentication failed for dialogs search: {e}")
-                    # Try to re-authenticate or handle auth error
-                    break
-                except errors.SessionPasswordNeededError as e:
-                    log.error(f"Two-factor authentication required for dialogs search: {e}")
                     break
                 except Exception as e:
                     log.warning(f"Dialogs search failed for '{keyword}': {e}")
