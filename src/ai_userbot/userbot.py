@@ -634,7 +634,7 @@ class UserBot:
 
                 qr = qrcode.QRCode(
                     error_correction=qrcode.constants.ERROR_CORRECT_H,
-                    box_size=3,
+                    box_size=2,
                     border=4,
                 )
                 qr.add_data(qr_login.url)
