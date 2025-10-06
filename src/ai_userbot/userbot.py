@@ -9,7 +9,6 @@ from typing import Dict, List, Optional, Set, Tuple
 import pytz
 
 from telethon import TelegramClient, events, types, errors
-from telethon.errors import FloodWait
 from telethon.tl.types import Message, Chat, User
 from telethon.tl.functions.channels import JoinChannelRequest
 # MessageId is not directly available, we'll use message.id instead
@@ -377,7 +376,7 @@ class UserBot:
                     if chat.is_group and not chat.is_private and chat.is_joinable:
                         if chat.id not in self.active_chats:
                             new_chats.append(chat)
-            except FloodWait as e:
+            except errors.FloodWait as e:
                 await asyncio.sleep(e.seconds)
             except Exception as e:
                 log.error(f"Search error for keyword '{keyword}': {e}")
