@@ -11,7 +11,7 @@ import pytz
 from telethon import TelegramClient, events, types, errors
 from telethon.tl.types import Message, Chat, User
 from telethon.tl.functions.channels import JoinChannelRequest
-from telethon.tl.types import MessageId
+# MessageId is not directly available, we'll use message.id instead
 from telethon.tl.functions import contacts
 
 from .config import AppConfig
@@ -330,7 +330,13 @@ class UserBot:
                         await self.client(JoinChannelRequest(chat.id))
                         
                         # Analyze rules
-                        pinned = await self.client.get_messages(chat.id, ids=MessageId(pinned=True))
+                        # Get pinned message using search for pinned messages
+                        async for message in self.client.iter_messages(chat.id, limit=1):
+                            if message.pinned:
+                                pinned = [message]
+                                break
+                        else:
+                            pinned = []
                         rules = self.rules_analyzer.analyze_chat_rules(chat, pinned)
                         self.chat_rules_cache[chat.id] = rules
                         
