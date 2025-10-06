@@ -373,8 +373,9 @@ class UserBot:
                 # Note: Telethon's search functionality may have changed, using basic approach
                 # For now, we'll skip the search and rely on manual chat joining
                 result = None
-                
-                for chat in result.chats:
+
+                if result and hasattr(result, 'chats'):
+                    for chat in result.chats:
                     if chat.is_group and not chat.is_private and chat.is_joinable:
                         if chat.id not in self.active_chats:
                             new_chats.append(chat)
