@@ -109,7 +109,7 @@ printf '%b\n' "${GREEN}✅ Deployment complete!${NC}"
 echo ""
 printf 'Useful commands:\n'
 printf '  ssh %s\n' "$REMOTE_HOST"
-printf '  cd %s\n' "$REMOTE_DIR"
+printf '  cd %s\n' "${REMOTE_DIR}"
 printf '  docker compose -f docker-compose.ai-userbot.yml logs -f\n'
 printf '  docker compose -f docker-compose.ai-userbot.yml restart\n'
 printf '  docker compose -f docker-compose.ai-userbot.yml down\n'
