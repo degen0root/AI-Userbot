@@ -1,5 +1,6 @@
 #!/usr/bin/env sh
 set -eu
+set -x
 
 echo "[entrypoint] Starting AI-Userbot container..."
 
@@ -34,5 +35,6 @@ if [ "$#" -gt 0 ]; then
   echo "[entrypoint] Executing custom command: $@"
   exec "$@"
 else
+  ls -la /app
   exec python /app/run.py
 fi
