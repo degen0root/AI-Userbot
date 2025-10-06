@@ -577,8 +577,10 @@ class UserBot:
                 chats_found = set()
 
                 try:
-                    # Method 1: Global search using get_dialogs (this is more reliable)
-                    async for dialog in self.client.iter_dialogs(limit=50):
+                    # Method 1: Search using get_dialogs (check existing dialogs)
+                    dialogs = await self.client.get_dialogs(limit=100)
+
+                    for dialog in dialogs:
                         if (dialog.is_group and not dialog.is_channel and
                             self._is_suitable_chat(dialog.entity) and
                             dialog.entity.id not in self.active_chats):
