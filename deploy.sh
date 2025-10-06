@@ -105,7 +105,7 @@ ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR 
 # Switch back to default context
 docker context use default
 
-printf '%b\n' "${GREEN}✅ Deployment complete!${NC}"
+echo -e "${GREEN}✅ Deployment complete!${NC}"
 echo ""
 echo 'Useful commands:'
 echo '  ssh '$REMOTE_HOST
