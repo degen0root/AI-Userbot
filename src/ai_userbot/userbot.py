@@ -142,6 +142,36 @@ class UserBot:
             self._record_cache_hit()
         return self._message_cache.get(cache_key)
 
+    def _parse_chat_identifier(self, chat_identifier):
+        """Parse chat identifier from various formats"""
+        if not chat_identifier:
+            return None
+
+        # Remove whitespace
+        chat_identifier = chat_identifier.strip()
+
+        # Handle username (starts with @)
+        if chat_identifier.startswith('@'):
+            return chat_identifier
+
+        # Handle URL format (https://t.me/username)
+        if chat_identifier.startswith('https://t.me/'):
+            username = chat_identifier.replace('https://t.me/', '')
+            return f'@{username}'
+
+        # Handle numeric ID
+        try:
+            chat_id = int(chat_identifier)
+            return chat_id
+        except (ValueError, TypeError):
+            pass
+
+        # Handle username without @
+        if chat_identifier and not chat_identifier.startswith('http'):
+            return f'@{chat_identifier}'
+
+        return None
+
     def _increment_stat(self, stat_name: str, value: int = 1):
         """Increment monitoring statistic"""
         self._stats[stat_name] += value
@@ -432,12 +462,15 @@ class UserBot:
 
         for chat_identifier in chat_list:
             try:
+                # Parse chat identifier (username, URL, or numeric ID)
+                parsed_identifier = self._parse_chat_identifier(chat_identifier)
+                if not parsed_identifier:
+                    log.warning(f"Could not parse chat identifier: {chat_identifier}")
+                    continue
+
                 # Try to get chat entity
                 try:
-                    if chat_identifier.startswith('@'):
-                        chat = await self.get_entity_cached(chat_identifier)
-                    else:
-                        chat = await self.get_entity_cached(int(chat_identifier))
+                    chat = await self.get_entity_cached(parsed_identifier)
                 except Exception as e:
                     log.warning(f"Could not find chat {chat_identifier}: {e}")
                     continue
