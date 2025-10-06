@@ -62,8 +62,10 @@ class PromotedBotSection(BaseModel):
 class PolicySection(BaseModel):
     disclose_identity: bool = False  # Не раскрываем, что мы бот
     disclosure_text: str = ""
-    min_gap_seconds_per_chat: int = 1800  # 30 минут между сообщениями в одном чате
-    max_replies_per_hour_per_chat: int = 2  # Максимум 2 ответа в час в одном чате
+    min_gap_seconds_per_chat: int = 300  # 5 минут между сообщениями в одном чате
+    max_replies_per_hour_per_chat: int = 8  # Максимум 8 ответов в час в одном чате
+    daily_message_target: int = 200  # Целевое количество сообщений в день
+    max_chats_per_day: int = 50  # Максимум чатов для активности в день
     relevance_threshold: float = 0.25  # Более низкий порог для участия
     promotion_probability: float = 0.03  # 3% шанс упомянуть бота
     promotion_text: str = (
@@ -76,32 +78,22 @@ class PolicySection(BaseModel):
     
     # Message timing
     typing_speed_wpm: int = 40  # Слов в минуту при "печатании"
-    min_typing_delay: float = 2.0  # Минимальная задержка печати (секунды)
-    max_typing_delay: float = 8.0  # Максимальная задержка печати (секунды)
-    reaction_delay_range: List[int] = Field(default_factory=lambda: [3, 15])  # секунды реакции на сообщение
+    reaction_delay_range: List[int] = Field(default_factory=lambda: [5, 30])  # секунды
 
     # Human-like behavior
-    message_variation_probability: float = 0.15  # Вероятность небольших изменений в сообщениях
-    typo_probability: float = 0.05  # Вероятность опечаток (5%)
-    daily_message_target: int = 200  # Целевое количество сообщений в день
-    max_chats_per_day: int = 50  # Максимум чатов для активности в день
+    typo_probability: float = 0.05  # 5% шанс опечатки
+    message_length_variation: float = 0.3  # Варьировать длину сообщения на ±30%
+    response_time_jitter: int = 60  # Разброс времени ответа ±60 секунд
     
     # Time zone and schedule
     timezone: str = Field(default="Europe/Moscow")
     active_hours: Dict[str, Union[int, List[int]]] = Field(default_factory=lambda: {
-        "wake_up": 7,
-        "morning_active": [8, 12],      # Утро: 8-12
-        "lunch_break": [12, 14],        # Обед: 12-14
-        "afternoon_active": [14, 18],   # День: 14-18
-        "evening_active": [19, 23],     # Вечер: 19-23
-        "sleep_time": 24
-    })
-
-    # Activity distribution (как распределять сообщения по времени дня)
-    activity_distribution: Dict[str, float] = Field(default_factory=lambda: {
-        "morning": 0.25,    # 25% утром
-        "afternoon": 0.35,  # 35% днем
-        "evening": 0.40     # 40% вечером
+        "wake_up": 8,
+        "morning_active": [8, 12],
+        "lunch_break": [12, 13],
+        "afternoon_active": [13, 18],
+        "evening_active": [19, 22],
+        "sleep_time": 23
     })
     
     # Activity patterns

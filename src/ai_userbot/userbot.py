@@ -58,6 +58,16 @@ class UserBot:
         async def on_group_message(event: events.NewMessage.Event):
             if event.is_group:
                 await self._handle_group_message(event)
+
+        # Handle when bot is added to a new chat
+        @self.client.on(events.ChatAction)
+        async def on_chat_action(event: events.ChatAction.Event):
+            if event.user_added and event.user_id == (await self.client.get_me()).id:
+                log.info(f"Bot was added to chat {event.chat_id}")
+                await self._handle_new_chat_joined(event.chat_id)
+            elif event.user_kicked and event.user_id == (await self.client.get_me()).id:
+                log.info(f"Bot was removed from chat {event.chat_id}")
+                await self._handle_chat_left(event.chat_id)
     
     async def start(self):
         """Start the userbot"""
@@ -72,11 +82,90 @@ class UserBot:
         # Start background tasks
         asyncio.create_task(self._chat_discovery_loop())
         asyncio.create_task(self._cleanup_old_messages())
+        asyncio.create_task(self._activity_scheduler())
     
     async def stop(self):
         """Stop the userbot"""
         await self.client.disconnect()
         log.info("UserBot stopped")
+
+    async def _handle_new_chat_joined(self, chat_id: int):
+        """Handle when bot is added to a new chat"""
+        try:
+            # Get chat info
+            chat = await self.client.get_entity(chat_id)
+            if not chat:
+                return
+
+            # Check if chat meets criteria
+            if not self._is_suitable_chat(chat):
+                log.info(f"Chat {chat_id} doesn't meet criteria, leaving")
+                await self.client.delete_dialog(chat_id)
+                return
+
+            # Analyze chat rules
+            try:
+                pinned = await self._get_pinned_messages(chat_id)
+                rules = self.rules_analyzer.analyze_chat_rules(chat, pinned)
+                self.chat_rules_cache[chat_id] = rules
+            except Exception as e:
+                log.warning(f"Could not analyze rules for chat {chat_id}: {e}")
+                rules = {}
+
+            # Add to database
+            await self.db.add_chat(
+                chat_id=chat_id,
+                title=getattr(chat, 'title', 'Unknown'),
+                username=getattr(chat, 'username', None),
+                members_count=getattr(chat, 'participants_count', 0),
+                is_active=True
+            )
+
+            self.active_chats.add(chat_id)
+            log.info(f"Successfully joined chat: {getattr(chat, 'title', 'Unknown')}")
+
+        except Exception as e:
+            log.error(f"Error handling new chat {chat_id}: {e}")
+
+    async def _handle_chat_left(self, chat_id: int):
+        """Handle when bot leaves a chat"""
+        self.active_chats.discard(chat_id)
+        await self.db.deactivate_chat(chat_id)
+        log.info(f"Left chat {chat_id}")
+
+    def _is_suitable_chat(self, chat) -> bool:
+        """Check if chat meets our criteria"""
+        # Must be a group/supergroup
+        if not hasattr(chat, 'megagroup') and not (hasattr(chat, 'broadcast') and not chat.broadcast):
+            return False
+
+        # Check against forbidden terms in title/description
+        title = getattr(chat, 'title', '').lower()
+        description = getattr(chat, 'about', '').lower()
+
+        for term in self.config.policy.forbidden_terms:
+            if term.lower() in title or term.lower() in description:
+                return False
+
+        # Check if it's a women's chat based on keywords
+        women_keywords = ["женск", "девушк", "мамочк", "подруг", "мам"]
+        chat_text = f"{title} {description}"
+
+        women_count = sum(1 for keyword in women_keywords if keyword in chat_text)
+        if women_count > 0:
+            return True
+
+        return False
+
+    async def _get_pinned_messages(self, chat_id: int):
+        """Get pinned messages from a chat"""
+        try:
+            async for message in self.client.iter_messages(chat_id, limit=5):
+                if message.pinned:
+                    return [message]
+        except Exception as e:
+            log.warning(f"Could not get pinned messages for chat {chat_id}: {e}")
+        return []
     
     def _get_chat_category(self, chat_title: str) -> str:
         """Determine chat category based on title"""
@@ -146,6 +235,11 @@ class UserBot:
         if not should_respond:
             return
 
+        # Check hourly message limit for this chat
+        if not await self._check_hourly_limit(chat_id):
+            log.debug(f"Hourly limit reached for chat {chat_id}")
+            return
+
         # Simulate typing with random delay
         await self._simulate_human_behavior(chat_id, message)
 
@@ -154,12 +248,9 @@ class UserBot:
         if not response:
             return
 
-        # Apply human-like variations to response
-        final_response = self._add_human_variations(response)
-
         # Send response
         try:
-            await self.client.send_message(chat_id, final_response)
+            await self.client.send_message(chat_id, response)
 
             # Update tracking
             now = time.time()
@@ -255,10 +346,6 @@ class UserBot:
         
         # Random typing delay based on response length (will be estimated)
         typing_time = random.uniform(self.config.policy.min_typing_delay, self.config.policy.max_typing_delay)
-
-        # Add random variation to make typing more human-like
-        if random.random() < 0.3:  # 30% chance of longer typing
-            typing_time *= random.uniform(1.2, 2.0)
         
         # Send typing action
         async with self.client.action(chat_id, 'typing'):
@@ -266,46 +353,15 @@ class UserBot:
 
     async def _generate_response(self, chat_id: int, message: Message) -> Optional[str]:
         """Generate a natural response using LLM"""
-        # Get chat info
-        chat = await self.client.get_entity(chat_id)
-        chat_title = chat.title if hasattr(chat, 'title') else "Unknown"
-        chat_category = self._get_chat_category(chat_title)
-        
-        # Get recent context
-        context = await self.db.get_recent_messages(chat_id, limit=self.config.llm.context_messages)
-        
-        # Decide if to promote
-        should_promote = random.random() < self.config.policy.promotion_probability[chat_category]
-        
-        # Get relevant bot features if promoting
-        if should_promote:
-            relevant_features = get_relevant_features(message.text or "", context)
-            bot_mention = generate_natural_mention(self.config.promoted_bot, relevant_features, self.rules_analyzer.analyze_chat_rules(chat))
-        else:
-            bot_mention = ""
-        
-        # Prepare LLM request
-        request = LLMRequest(
-            system_prompt=self.persona.get_system_prompt(chat_category, should_promote),
-            user_message=message.text or "",
-            context=context,
-            bot_mention=bot_mention if should_promote else ""
-        )
-        
-        try:
-            response = await self.llm.generate_response(request)
-            if not response:
-                return None
-            
-            # Enforce max length
-            if len(response) > self.config.policy.max_response_length:
-                response = response[:self.config.policy.max_response_length] + "..."
-            
-            return response
-            
-        except Exception as e:
-            log.error(f"LLM generation error: {e}")
-            return None
+        # Get recent context for human-like response
+        context_messages = await self.db.get_recent_messages(chat_id, limit=5)
+
+        # Build context string
+        context = self._build_message_context(context_messages)
+        context = f"Контекст разговора:\n{context}\n\nСообщение пользователя: {message.text or ''}"
+
+        # Generate human-like response
+        return await self._generate_human_like_response(context, chat_id)
 
     async def _calculate_relevance(self, message: Message, context: List[MessageContext]) -> float:
         """Calculate how relevant the message is to persona interests"""
@@ -399,67 +455,6 @@ class UserBot:
         
         return new_chats[:self.config.policy.max_new_chats_per_cycle]
 
-    def _add_human_variations(self, response: str) -> str:
-        """Add human-like variations: typos, slight changes, etc."""
-        if not response:
-            return response
-
-        # Apply typo with configured probability
-        if random.random() < self.config.policy.typo_probability:
-            response = self._add_typo(response)
-
-        # Apply message variation with configured probability
-        if random.random() < self.config.policy.message_variation_probability:
-            response = self._add_message_variation(response)
-
-        return response
-
-    def _add_typo(self, text: str) -> str:
-        """Add a random typo to make it more human-like"""
-        if len(text) < 3:
-            return text
-
-        # Common typos for Russian text
-        typo_patterns = [
-            ('о', 'а'), ('а', 'о'), ('е', 'ё'), ('ё', 'е'),
-            ('и', 'ы'), ('ы', 'и'), ('у', 'ю'), ('ю', 'у'),
-            ('я', 'а'), ('а', 'я'), ('ь', 'ъ'), ('ъ', 'ь')
-        ]
-
-        words = text.split()
-        if not words:
-            return text
-
-        # Pick random word to modify
-        word_idx = random.randint(0, len(words) - 1)
-        word = words[word_idx]
-
-        # Pick random typo pattern
-        if len(word) > 1:
-            typo_idx = random.randint(0, len(word) - 1)
-            original_char = word[typo_idx]
-
-            for orig, typo in typo_patterns:
-                if original_char == orig:
-                    new_word = word[:typo_idx] + typo + word[typo_idx + 1:]
-                    words[word_idx] = new_word
-                    break
-
-        return ' '.join(words)
-
-    def _add_message_variation(self, text: str) -> str:
-        """Add slight variations to message (extra words, punctuation, etc.)"""
-        variations = [
-            lambda t: t + " кстати",  # Add "кстати"
-            lambda t: t + ")",       # Add closing parenthesis
-            lambda t: t + " 😊",     # Add emoji
-            lambda t: "Хм, " + t,    # Add "Хм," prefix
-            lambda t: t + " да",     # Add "да"
-        ]
-
-        variation = random.choice(variations)
-        return variation(text)
-
     async def _cleanup_old_messages(self):
         """Periodic cleanup of old message history"""
         while True:
@@ -467,3 +462,220 @@ class UserBot:
             cutoff_date = datetime.now() - timedelta(days=30)
             await self.db.cleanup_old_messages(cutoff_date)
             await asyncio.sleep(86400)  # Run daily
+
+    async def _activity_scheduler(self):
+        """Smart activity scheduler for human-like behavior"""
+        while True:
+            try:
+                current_time = datetime.now(pytz.timezone(self.config.policy.timezone))
+
+                # Check if we're in active hours
+                if not self._is_active_time(current_time):
+                    await asyncio.sleep(1800)  # Check every 30 minutes
+                    continue
+
+                # Get daily statistics
+                today_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+                daily_stats = await self.db.get_daily_stats(today_start)
+
+                messages_sent_today = daily_stats.get('messages_sent', 0)
+                active_chats_today = len(daily_stats.get('active_chats', set()))
+
+                # If we haven't reached daily target, be more active
+                if messages_sent_today < self.config.policy.daily_message_target:
+                    # Distribute activity across available chats
+                    available_chats = list(self.active_chats)
+                    if available_chats:
+                        # Shuffle chats for natural distribution
+                        random.shuffle(available_chats)
+
+                        # Calculate how many messages we need to send
+                        remaining_messages = self.config.policy.daily_message_target - messages_sent_today
+                        chats_to_use = min(len(available_chats), self.config.policy.max_chats_per_day)
+
+                        messages_per_chat = max(1, remaining_messages // chats_to_use)
+
+                        for chat_id in available_chats[:chats_to_use]:
+                            try:
+                                await self._send_scheduled_message(chat_id, messages_per_chat)
+                                # Random delay between chat interactions
+                                await asyncio.sleep(random.uniform(60, 300))  # 1-5 minutes
+                            except Exception as e:
+                                log.error(f"Error sending scheduled message to {chat_id}: {e}")
+
+                # Sleep until next activity check
+                await asyncio.sleep(random.uniform(1800, 3600))  # 30 minutes to 1 hour
+
+            except Exception as e:
+                log.error(f"Error in activity scheduler: {e}")
+                await asyncio.sleep(1800)
+
+    def _is_active_time(self, current_time: datetime) -> bool:
+        """Check if current time is within active hours"""
+        hour = current_time.hour
+
+        # Weekend vs weekday
+        is_weekend = current_time.weekday() >= 5
+        activity_multiplier = self.config.policy.weekend_activity_multiplier if is_weekend else 1.0
+
+        # Check against active hours
+        for period, hours in self.config.policy.active_hours.items():
+            if isinstance(hours, list):
+                start_hour, end_hour = hours
+                if start_hour <= hour < end_hour:
+                    # Add some randomness
+                    if random.random() < activity_multiplier:
+                        return True
+            elif isinstance(hours, int):
+                if hour >= hours:  # wake_up time
+                    return True
+
+        # Night messages (rare)
+        if random.random() < self.config.policy.night_messages_probability:
+            return True
+
+        return False
+
+    async def _send_scheduled_message(self, chat_id: int, target_messages: int):
+        """Send scheduled messages to a chat"""
+        messages_sent = 0
+
+        # Get recent messages from this chat for context
+        recent_messages = await self.db.get_recent_messages(chat_id, limit=5)
+
+        for _ in range(min(target_messages, 3)):  # Max 3 messages per chat per cycle
+            try:
+                # Generate context-aware response
+                context = self._build_message_context(recent_messages)
+                response = await self._generate_human_like_response(context, chat_id)
+
+                if response and len(response.strip()) > 10:  # Minimum length
+                    # Add human-like delays and typing simulation
+                    await self._simulate_human_behavior(chat_id)
+
+                    # Send message
+                    await self.client.send_message(chat_id, response)
+
+                    # Update statistics
+                    await self.db.log_message(
+                        chat_id=chat_id,
+                        user_id=0,  # Bot message
+                        message_text=response,
+                        is_bot_message=True
+                    )
+
+                    messages_sent += 1
+
+                    # Random delay between messages in same chat
+                    await asyncio.sleep(random.uniform(30, 120))
+
+            except Exception as e:
+                log.error(f"Error sending scheduled message to {chat_id}: {e}")
+                break
+
+    def _build_message_context(self, recent_messages) -> str:
+        """Build context from recent messages"""
+        context_parts = []
+        for msg in recent_messages[-3:]:  # Last 3 messages
+            context_parts.append(f"{msg.username or 'User'}: {msg.message_text}")
+
+        return "\n".join(context_parts) if context_parts else "Начало разговора"
+
+    async def _generate_human_like_response(self, context: str, chat_id: int) -> str:
+        """Generate human-like response with typos and variations"""
+        try:
+            # Get base response from LLM
+            response = await self.llm.generate_response(
+                system_prompt=self.persona.get_system_prompt(),
+                user_message=f"Контекст разговора:\n{context}\n\nНапиши естественный ответ в этом чате.",
+                chat_context={"chat_id": chat_id}
+            )
+
+            if not response:
+                return None
+
+            # Add human-like variations
+            response = self._add_human_variations(response)
+
+            return response
+
+        except Exception as e:
+            log.error(f"Error generating response: {e}")
+            return None
+
+    def _add_human_variations(self, text: str) -> str:
+        """Add human-like variations to text (typos, length variations, etc.)"""
+        # Length variation
+        if random.random() < self.config.policy.message_length_variation:
+            words = text.split()
+            if len(words) > 3:
+                # Randomly remove or add words
+                if random.random() < 0.5 and len(words) > 2:
+                    words = words[:-1]  # Remove last word
+                elif random.random() < 0.3:
+                    # Add a filler word
+                    fillers = ["ну", "вот", "типа", "как бы", "в общем"]
+                    insert_pos = random.randint(0, len(words))
+                    words.insert(insert_pos, random.choice(fillers))
+
+                text = " ".join(words)
+
+        # Occasional typos
+        if random.random() < self.config.policy.typo_probability:
+            text = self._add_typo(text)
+
+        return text
+
+    def _add_typo(self, text: str) -> str:
+        """Add a random typo to text"""
+        if len(text) < 5:
+            return text
+
+        # Common typos in Russian
+        typo_patterns = [
+            ("о", "а"), ("а", "о"), ("е", "и"), ("и", "е"),
+            ("ы", "и"), ("у", "ю"), ("я", "а"), ("с", "з"),
+            ("т", "д"), ("н", "м"), ("р", "л")
+        ]
+
+        words = text.split()
+        if words:
+            word_idx = random.randint(0, len(words) - 1)
+            word = words[word_idx]
+
+            if len(word) > 3:
+                char_idx = random.randint(1, len(word) - 2)
+                original_char = word[char_idx]
+
+                # Find replacement
+                for orig, repl in typo_patterns:
+                    if original_char == orig:
+                        new_word = word[:char_idx] + repl + word[char_idx + 1:]
+                        words[word_idx] = new_word
+                        break
+
+        return " ".join(words)
+
+    async def _check_hourly_limit(self, chat_id: int) -> bool:
+        """Check if we've reached the hourly message limit for this chat"""
+        current_time = datetime.now()
+        hour_start = current_time.replace(minute=0, second=0, microsecond=0)
+
+        # Get messages sent in the last hour
+        recent_messages = await self.db.get_messages_since(chat_id, hour_start, bot_only=True)
+
+        return len(recent_messages) < self.config.policy.max_replies_per_hour_per_chat
+
+    async def _simulate_human_behavior(self, chat_id: int):
+        """Simulate human-like behavior before sending message"""
+        # Random delay before typing
+        delay = random.uniform(*self.config.policy.reaction_delay_range)
+        await asyncio.sleep(delay)
+
+        # Simulate typing
+        typing_time = random.uniform(
+            self.config.policy.min_typing_delay,
+            self.config.policy.max_typing_delay
+        )
+        async with self.client.action(chat_id, 'typing'):
+            await asyncio.sleep(typing_time)

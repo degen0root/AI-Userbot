@@ -302,3 +302,43 @@ class ChatDatabase:
             
             await session.commit()
             log.info(f"Cleaned up messages older than {cutoff_date}")
+
+    async def get_daily_stats(self, date_start: datetime) -> Dict:
+        """Get daily statistics for messages and active chats"""
+        async with self.async_session() as session:
+            # Get messages sent today
+            messages_result = await session.execute(
+                select(MessageRecord).where(
+                    MessageRecord.timestamp >= date_start,
+                    MessageRecord.is_bot_message == True
+                )
+            )
+            messages = messages_result.scalars().all()
+
+            # Get active chats today
+            chats_result = await session.execute(
+                select(ChatRecord.chat_id).where(
+                    ChatRecord.last_activity >= date_start,
+                    ChatRecord.is_active == True
+                )
+            )
+            active_chats = set(chats_result.scalars().all())
+
+            return {
+                "messages_sent": len(messages),
+                "active_chats": active_chats
+            }
+
+    async def get_messages_since(self, chat_id: int, since: datetime, bot_only: bool = False) -> List[MessageRecord]:
+        """Get messages from a chat since a specific time"""
+        async with self.async_session() as session:
+            query = select(MessageRecord).where(
+                MessageRecord.chat_id == chat_id,
+                MessageRecord.timestamp >= since
+            )
+
+            if bot_only:
+                query = query.where(MessageRecord.is_bot_message == True)
+
+            result = await session.execute(query)
+            return result.scalars().all()
