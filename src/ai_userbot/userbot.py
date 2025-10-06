@@ -633,8 +633,8 @@ class UserBot:
                 qr_login = await self.client.qr_login()
 
                 qr = qrcode.QRCode(
-                    error_correction=qrcode.constants.ERROR_CORRECT_M,
-                    box_size=2,
+                    error_correction=qrcode.constants.ERROR_CORRECT_H,
+                    box_size=3,
                     border=4,
                 )
                 qr.add_data(qr_login.url)
@@ -644,9 +644,13 @@ class UserBot:
                 f.seek(0)
                 qr_code_ascii = f.read()
 
+                log.info("🔷🔷🔷 СКАНИРУЙТЕ QR-КОД НИЖЕ 🔷🔷🔷")
+                log.info("="*70)
                 log.info("Scan the QR code below with your Telegram app (Settings > Devices > Link Desktop Device).")
-                log.info("\n\n" + "="*50 + "\n" + qr_code_ascii + "\n" + "="*50 + "\n\n")
-                log.info(f"Waiting for QR code scan... The code will expire in 2 minutes.")
+                log.info("="*70)
+                log.info(qr_code_ascii)
+                log.info("="*70)
+                log.info("⏰ ОЖИДАНИЕ СКАНИРОВАНИЯ... Код истечет через 2 минуты ⏰")
 
                 user = await qr_login.wait(timeout=120)
                 log.info(f"Successfully logged in as {user.first_name} {getattr(user, 'last_name', '')}")
