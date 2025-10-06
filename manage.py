@@ -141,6 +141,16 @@ async def main():
     
     # Test LLM command
     subparsers.add_parser("test-llm", help="Test LLM connection")
+
+    # Join chats command (Telethon)
+    join_parser = subparsers.add_parser("join-chats", help="Join a list of chats with Telethon user session")
+    join_parser.add_argument("--config", default="configs/config.yaml", help="Path to app config YAML")
+    join_parser.add_argument("--session-name", default="sessions/userbot_session", help="Telethon session name or path")
+    join_parser.add_argument("--links-file", default="scripts/targets_example.txt", help="Path to file with t.me links/usernames")
+    join_parser.add_argument("--throttle", type=float, default=2.5, help="Seconds to wait between joins")
+    join_parser.add_argument("--persona-filter", action="store_true", help="Join only targets matching Persona interests")
+    join_parser.add_argument("--sort-by-score", action="store_true", help="Join in order of Persona relevance (high→low)")
+    join_parser.add_argument("--dry-run", action="store_true", help="Only print actions, do not join")
     
     args = parser.parse_args()
     
@@ -162,6 +172,20 @@ async def main():
             await reset_database()
         elif args.command == "test-llm":
             await test_llm(config_path)
+        elif args.command == "join-chats":
+            # Lazy import to avoid Telethon dependency unless needed
+            from scripts.join_chats import run_join
+            rc = await run_join(
+                config=args.config,
+                session_name=args.session_name,
+                links_file=args.links_file,
+                throttle=args.throttle,
+                persona_filter=args.persona_filter,
+                sort_by_score=args.sort_by_score,
+                dry_run=args.dry_run,
+            )
+            if rc != 0:
+                sys.exit(rc)
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)

@@ -9,6 +9,22 @@ from pydantic import BaseModel, Field
 import yaml
 
 
+def _file_exists(file_path: str) -> bool:
+    """Check if file exists"""
+    return Path(file_path).exists()
+
+
+def _load_targets_from_file() -> List[str]:
+    """Load target chats from file"""
+    try:
+        targets_file = Path("scripts/targets.txt")
+        if targets_file.exists():
+            return [line.strip() for line in targets_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    except Exception:
+        pass
+    return []
+
+
 class AppSection(BaseModel):
     name: str = Field(default="AIUserbot")
     logging_level: str = Field(default="INFO")
@@ -42,9 +58,8 @@ class TelegramSection(BaseModel):
     
     # Manual chat joining settings
     predefined_chats: List[str] = Field(default_factory=lambda: [
-        # Add your chat usernames or IDs here
-        # "@example_chat",
-        # "123456789",
+        # Load from targets.txt file if it exists
+        *(_load_targets_from_file() if _file_exists("scripts/targets.txt") else [])
     ])
     auto_join_predefined_chats: bool = True  # Auto-join predefined chats on startup
 
@@ -52,9 +67,7 @@ class TelegramSection(BaseModel):
     respond_to_personal_messages: bool = True  # Whether to respond to personal messages
     max_personal_replies_per_hour: int = 10  # Max replies to personal messages per hour
 
-    # Daily activity settings
-    daily_message_target: int = 200  # Целевое количество сообщений в день
-    max_chats_per_day: int = 50  # Максимум чатов для активности в день
+    # Daily activity settings (moved to PolicySection to avoid duplication)
 
     # Old bot settings (kept for compatibility)
     allowed_chat_ids: List[int] = Field(default_factory=list)
@@ -85,6 +98,7 @@ class PolicySection(BaseModel):
     daily_message_target: int = 200  # Целевое количество сообщений в день
     max_chats_per_day: int = 50  # Максимум чатов для активности в день
     relevance_threshold: float = 0.25  # Более низкий порог для участия
+    response_probability: float = 0.7  # Вероятность ответа на сообщение (70%)
     promotion_probability: float = 0.03  # 3% шанс упомянуть бота
     promotion_text: str = (
         "Кстати, недавно нашла классного бота @LunnyiHramBot - "
@@ -97,6 +111,8 @@ class PolicySection(BaseModel):
     # Message timing
     typing_speed_wpm: int = 40  # Слов в минуту при "печатании"
     reaction_delay_range: List[int] = Field(default_factory=lambda: [5, 30])  # секунды
+    min_typing_delay: int = 1  # Минимальная задержка печати в секундах
+    max_typing_delay: int = 10  # Максимальная задержка печати в секундах
 
     # Human-like behavior
     typo_probability: float = 0.05  # 5% шанс опечатки
@@ -174,7 +190,8 @@ def load_config(path: Optional[str | os.PathLike[str]] = None) -> AppConfig:
     cfg.telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", cfg.telegram_bot_token)
     
     # Userbot credentials from env
-    cfg.telegram.api_id = int(os.getenv("TELEGRAM_API_ID", cfg.telegram.api_id or 0))
+    api_id_str = os.getenv("TELEGRAM_API_ID", str(cfg.telegram.api_id or 0))
+    cfg.telegram.api_id = int(api_id_str) if api_id_str and api_id_str != "0" else 0
     cfg.telegram.api_hash = os.getenv("TELEGRAM_API_HASH", cfg.telegram.api_hash)
     cfg.telegram.phone_number = os.getenv("TELEGRAM_PHONE_NUMBER", cfg.telegram.phone_number)
     

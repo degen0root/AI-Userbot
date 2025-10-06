@@ -47,9 +47,18 @@ class UserBot:
         self.messages_per_hour: Dict[int, List[float]] = {}
         self.is_typing: Dict[int, bool] = {}
         self.chat_rules_cache: Dict[int, Dict[str, bool]] = {}  # Cache analyzed rules
-        
+
+        # Cache for user info to avoid repeated API calls
+        self._user_info_cache: Optional[types.User] = None
+
         # Setup handlers
         self._setup_handlers()
+
+    async def get_me_cached(self) -> types.User:
+        """Get cached user info, fetch from API if not cached"""
+        if self._user_info_cache is None:
+            self._user_info_cache = await self.client.get_me()
+        return self._user_info_cache
     
     def _setup_handlers(self):
         """Setup message handlers"""
@@ -70,10 +79,10 @@ class UserBot:
         # Handle when bot is added to a new chat
         @self.client.on(events.ChatAction)
         async def on_chat_action(event: events.ChatAction.Event):
-            if event.user_added and event.user_id == (await self.client.get_me()).id:
+            if event.user_added and event.user_id == (await self.get_me_cached()).id:
                 log.info(f"Bot was added to chat {event.chat_id}")
                 await self._handle_new_chat_joined(event.chat_id)
-            elif event.user_kicked and event.user_id == (await self.client.get_me()).id:
+            elif event.user_kicked and event.user_id == (await self.get_me_cached()).id:
                 log.info(f"Bot was removed from chat {event.chat_id}")
                 await self._handle_chat_left(event.chat_id)
 
@@ -136,14 +145,14 @@ class UserBot:
         if message.reply_to_msg_id:
             try:
                 reply_msg = await self.client.get_messages(event.chat_id, ids=message.reply_to_msg_id)
-                if reply_msg and reply_msg.from_id == (await self.client.get_me()).id:
+                if reply_msg and reply_msg.from_id == (await self.get_me_cached()).id:
                     return True
             except Exception as e:
                 log.debug(f"Could not check reply message: {e}")
 
         # Check if bot is mentioned in the message
         if message.text:
-            bot_username = (await self.client.get_me()).username
+            bot_username = (await self.get_me_cached()).username
             if bot_username and f"@{bot_username}" in message.text:
                 return True
 
@@ -407,7 +416,7 @@ class UserBot:
     async def _should_respond_to_personal(self, sender, message) -> bool:
         """Determine if we should respond to a personal message"""
         # Don't respond to our own messages
-        if sender and sender.id == (await self.client.get_me()).id:
+        if sender and sender.id == (await self.get_me_cached()).id:
             return False
 
         # Simple relevance check - respond to most messages
@@ -915,7 +924,7 @@ class UserBot:
         # Boost if replied to bot
         if message.reply_to_msg_id:
             reply_msg = await self.client.get_messages(chat_id, ids=message.reply_to_msg_id)
-            if reply_msg.from_id == (await self.client.get_me()).id:
+            if reply_msg.from_id == (await self.get_me_cached()).id:
                 base_chance *= 2.0
 
         # Random decision based on chance
@@ -1128,6 +1137,11 @@ class UserBot:
                 chats_found = set()
 
                 try:
+                    # Check if client is authorized before getting dialogs
+                    if not await self.client.is_user_authorized():
+                        log.warning(f"Client not authorized for dialogs search with keyword '{keyword}'")
+                        continue
+
                     # Method 1: Search using get_dialogs (check existing dialogs)
                     dialogs = await self.client.get_dialogs(limit=100)
 
@@ -1140,6 +1154,13 @@ class UserBot:
                             new_chats.append(dialog.entity)
                             log.info(f"Found chat via dialogs: {getattr(dialog.entity, 'title', 'Unknown')} (@{getattr(dialog.entity, 'username', 'N/A')})")
 
+                except errors.AuthKeyInvalidError as e:
+                    log.error(f"Authentication failed for dialogs search: {e}")
+                    # Try to re-authenticate or handle auth error
+                    break
+                except errors.SessionPasswordNeededError as e:
+                    log.error(f"Two-factor authentication required for dialogs search: {e}")
+                    break
                 except Exception as e:
                     log.warning(f"Dialogs search failed for '{keyword}': {e}")
 
