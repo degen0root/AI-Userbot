@@ -154,9 +154,12 @@ class UserBot:
         if not response:
             return
 
+        # Apply human-like variations to response
+        final_response = self._add_human_variations(response)
+
         # Send response
         try:
-            await self.client.send_message(chat_id, response)
+            await self.client.send_message(chat_id, final_response)
 
             # Update tracking
             now = time.time()
@@ -252,6 +255,10 @@ class UserBot:
         
         # Random typing delay based on response length (will be estimated)
         typing_time = random.uniform(self.config.policy.min_typing_delay, self.config.policy.max_typing_delay)
+
+        # Add random variation to make typing more human-like
+        if random.random() < 0.3:  # 30% chance of longer typing
+            typing_time *= random.uniform(1.2, 2.0)
         
         # Send typing action
         async with self.client.action(chat_id, 'typing'):
@@ -391,6 +398,67 @@ class UserBot:
             await asyncio.sleep(random.uniform(5, 15))  # Anti-flood delay
         
         return new_chats[:self.config.policy.max_new_chats_per_cycle]
+
+    def _add_human_variations(self, response: str) -> str:
+        """Add human-like variations: typos, slight changes, etc."""
+        if not response:
+            return response
+
+        # Apply typo with configured probability
+        if random.random() < self.config.policy.typo_probability:
+            response = self._add_typo(response)
+
+        # Apply message variation with configured probability
+        if random.random() < self.config.policy.message_variation_probability:
+            response = self._add_message_variation(response)
+
+        return response
+
+    def _add_typo(self, text: str) -> str:
+        """Add a random typo to make it more human-like"""
+        if len(text) < 3:
+            return text
+
+        # Common typos for Russian text
+        typo_patterns = [
+            ('о', 'а'), ('а', 'о'), ('е', 'ё'), ('ё', 'е'),
+            ('и', 'ы'), ('ы', 'и'), ('у', 'ю'), ('ю', 'у'),
+            ('я', 'а'), ('а', 'я'), ('ь', 'ъ'), ('ъ', 'ь')
+        ]
+
+        words = text.split()
+        if not words:
+            return text
+
+        # Pick random word to modify
+        word_idx = random.randint(0, len(words) - 1)
+        word = words[word_idx]
+
+        # Pick random typo pattern
+        if len(word) > 1:
+            typo_idx = random.randint(0, len(word) - 1)
+            original_char = word[typo_idx]
+
+            for orig, typo in typo_patterns:
+                if original_char == orig:
+                    new_word = word[:typo_idx] + typo + word[typo_idx + 1:]
+                    words[word_idx] = new_word
+                    break
+
+        return ' '.join(words)
+
+    def _add_message_variation(self, text: str) -> str:
+        """Add slight variations to message (extra words, punctuation, etc.)"""
+        variations = [
+            lambda t: t + " кстати",  # Add "кстати"
+            lambda t: t + ")",       # Add closing parenthesis
+            lambda t: t + " 😊",     # Add emoji
+            lambda t: "Хм, " + t,    # Add "Хм," prefix
+            lambda t: t + " да",     # Add "да"
+        ]
+
+        variation = random.choice(variations)
+        return variation(text)
 
     async def _cleanup_old_messages(self):
         """Periodic cleanup of old message history"""
