@@ -108,7 +108,7 @@ docker context use default
 printf '%b\n' "${GREEN}✅ Deployment complete!${NC}"
 echo ""
 echo 'Useful commands:'
-echo '  ssh '"$REMOTE_HOST"
+echo '  ssh '"${REMOTE_HOST}"
 echo '  cd '"$REMOTE_DIR"
 echo '  docker compose -f docker-compose.ai-userbot.yml logs -f'
 echo '  docker compose -f docker-compose.ai-userbot.yml restart'
