@@ -578,7 +578,7 @@ class UserBot:
 
                 try:
                     # Method 1: Global search using get_dialogs (this is more reliable)
-                    async for dialog in self.client.iter_dialogs(limit=self.config.telegram.max_search_results_per_keyword):
+                    async for dialog in self.client.iter_dialogs(limit=50):
                         if (dialog.is_group and not dialog.is_channel and
                             self._is_suitable_chat(dialog.entity) and
                             dialog.entity.id not in self.active_chats):
