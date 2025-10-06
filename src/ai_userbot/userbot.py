@@ -1115,7 +1115,7 @@ class UserBot:
                 log.error(f"Chat discovery error: {e}")
             
             # Sleep with jitter
-            sleep_time = self.config.policy.chat_discovery_interval + random.uniform(-300, 300)
+            sleep_time = self.config.telegram.chat_discovery_interval + random.uniform(-300, 300)
             await asyncio.sleep(sleep_time)
 
     async def _find_new_chats(self) -> List[Chat]:
