@@ -110,7 +110,7 @@ deploy_bot() {
             git pull origin main;
         else
             echo 'Cloning new repository...';
-            git clone https://github.com/degen0root/AI-Userbot.git '$REMOTE_DIR';
+            git clone https://${GITHUB_TOKEN}@github.com/degen0root/AI-Userbot.git '$REMOTE_DIR';
         fi
         mkdir -p $REMOTE_DIR/{data,logs,configs,sessions}
     "
