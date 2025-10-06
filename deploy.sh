@@ -229,7 +229,7 @@ update_bot() {
 # Function to connect to shell
 connect_shell() {
     echo -e "${GREEN}🐚 Connecting to container shell...${NC}"
-    ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker compose -f docker-compose.ai-userbot.yml exec ai-userbot /bin/bash" || \
+    ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker compose -f docker-compose.ai-userbot.yml run --rm -it --entrypoint /bin/bash ai-userbot" || \
         echo -e "${RED}Could not connect. Is bot running?${NC}"
 }
 
