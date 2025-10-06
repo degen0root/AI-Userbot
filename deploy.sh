@@ -47,9 +47,9 @@ rsync -avz --exclude='.git' \
 
 # Check if .env exists on remote
 echo -e "${YELLOW}Checking .env file on remote...${NC}"
-if ! ssh "$REMOTE_HOST" "test -f $REMOTE_DIR/.env"; then
+if ! ssh "$REMOTE_HOST" "test -f ~/.ai-userbot.env"; then
     echo -e "${RED}⚠️  .env file not found on remote server!${NC}"
-    echo "Please create $REMOTE_DIR/.env with your credentials"
+    echo "Please create ~/.ai-userbot.env with your credentials"
     echo "You can use .env.example as a template"
     exit 1
 fi
@@ -64,7 +64,7 @@ fi
 echo -e "${GREEN}Checking Telegram session on remote...${NC}"
 
 # Stop service to avoid SendCode collisions
-ssh "$REMOTE_HOST" "cd $REMOTE_DIR && docker-compose -f docker-compose.persona.yml down || true"
+ssh "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker-compose -f docker-compose.ai-userbot.yml down || true"
 
 # Determine session name from config (fallback to sessions/userbot_session)
 SESSION_NAME=$(ssh "$REMOTE_HOST" "awk -F': ' '/session_name:/ {print \\$2}' $REMOTE_DIR/configs/config.yaml 2>/dev/null | tr -d '\r\n\"' || true)
@@ -83,9 +83,9 @@ else
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo -e "${GREEN}Starting interactive QR login on remote...${NC}"
         # Build image to ensure scripts/create_session_qr_telethon.py is present in the container
-        ssh -t "$REMOTE_HOST" "cd $REMOTE_DIR && docker-compose -f docker-compose.persona.yml build ai-userbot"
+        ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker-compose -f docker-compose.ai-userbot.yml build ai-userbot"
         # Run QR login bypassing entrypoint so app won't start
-        ssh -t "$REMOTE_HOST" "cd $REMOTE_DIR && docker-compose -f docker-compose.persona.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr_telethon.py"
+        ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker-compose -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr_telethon.py"
     else
         echo -e "${YELLOW}Skipping interactive login. You can run it later manually.${NC}"
     fi
@@ -93,14 +93,14 @@ fi
 
 # Build and deploy
 echo -e "${GREEN}Building Docker image on remote...${NC}"
-ssh -t "$REMOTE_HOST" "cd $REMOTE_DIR && docker-compose -f docker-compose.persona.yml build"
+ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker-compose -f docker-compose.ai-userbot.yml build"
 
 echo -e "${GREEN}Starting new container...${NC}"
-ssh -t "$REMOTE_HOST" "cd $REMOTE_DIR && docker-compose -f docker-compose.persona.yml up -d"
+ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker-compose -f docker-compose.ai-userbot.yml up -d"
 
 # Show logs
 echo -e "${GREEN}Container started! Showing logs...${NC}"
-ssh -t "$REMOTE_HOST" "cd $REMOTE_DIR && docker-compose -f docker-compose.persona.yml logs -f --tail=50"
+ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker-compose -f docker-compose.ai-userbot.yml logs -f --tail=50"
 
 # Switch back to default context
 docker context use default
@@ -110,6 +110,6 @@ echo ""
 echo "Useful commands:"
 echo "  ssh $REMOTE_HOST"
 echo "  cd $REMOTE_DIR"
-echo "  docker-compose -f docker-compose.persona.yml logs -f"
-echo "  docker-compose -f docker-compose.persona.yml restart"
-echo "  docker-compose -f docker-compose.persona.yml down"
+echo "  docker-compose -f docker-compose.ai-userbot.yml logs -f"
+echo "  docker-compose -f docker-compose.ai-userbot.yml restart"
+echo "  docker-compose -f docker-compose.ai-userbot.yml down"
