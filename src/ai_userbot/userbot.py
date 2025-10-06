@@ -10,7 +10,7 @@ import pytz
 
 from telethon import TelegramClient, events, types, errors
 from telethon.tl.types import Message, Chat, User
-from telethon.tl.functions import JoinChannelRequest
+from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.types import MessageId
 from telethon.tl.functions import contacts
 
