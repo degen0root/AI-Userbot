@@ -630,8 +630,8 @@ class UserBot:
                 qr_login = await self.client.qr_login()
                 
                 qr = qrcode.QRCode(
-                    error_correction=qrcode.constants.ERROR_CORRECT_L,
-                    box_size=1,
+                    error_correction=qrcode.constants.ERROR_CORRECT_M,
+                    box_size=2,
                     border=4,
                 )
                 qr.add_data(qr_login.url)
