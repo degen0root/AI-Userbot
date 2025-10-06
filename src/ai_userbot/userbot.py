@@ -376,8 +376,12 @@ class UserBot:
                     if chat.is_group and not chat.is_private and chat.is_joinable:
                         if chat.id not in self.active_chats:
                             new_chats.append(chat)
-            except errors.FloodWait as e:
-                await asyncio.sleep(e.seconds)
+            except Exception as e:
+                if hasattr(e, 'seconds'):
+                    await asyncio.sleep(e.seconds)
+                else:
+                    log.error(f"Search error for keyword '{keyword}': {e}")
+                    break
             except Exception as e:
                 log.error(f"Search error for keyword '{keyword}': {e}")
             
