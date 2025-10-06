@@ -105,7 +105,6 @@ class PolicySection(BaseModel):
     # Chat discovery settings
     chat_discovery_interval: int = 1800  # 30 minutes between discovery cycles
     max_new_chats_per_cycle: int = 10  # Maximum new chats to join per cycle
-    max_search_results_per_keyword: int = 50  # Maximum search results per keyword
     enable_external_chat_search: bool = False  # Enable external chat search resources
     external_search_urls: List[str] = Field(default_factory=lambda: [
         "https://telegramchannels.me/channels",

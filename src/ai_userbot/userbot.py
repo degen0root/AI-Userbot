@@ -577,61 +577,58 @@ class UserBot:
                 chats_found = set()
 
                 try:
-                    # Method 1: Global search using contacts.Search
-                    result = await self.client(contacts.Search(q=keyword, limit=self.config.telegram.max_search_results_per_keyword))
+                    # Method 1: Global search using get_dialogs (this is more reliable)
+                    async for dialog in self.client.iter_dialogs(limit=self.config.telegram.max_search_results_per_keyword):
+                        if (dialog.is_group and not dialog.is_channel and
+                            self._is_suitable_chat(dialog.entity) and
+                            dialog.entity.id not in self.active_chats):
 
-                    if result and hasattr(result, 'chats'):
-                        for chat in result.chats:
-                            if self._is_suitable_chat(chat) and chat.id not in self.active_chats:
-                                chats_found.add(chat.id)
-                                new_chats.append(chat)
-                                log.info(f"Found chat via global search: {getattr(chat, 'title', 'Unknown')} (@{getattr(chat, 'username', 'N/A')})")
+                            chats_found.add(dialog.entity.id)
+                            new_chats.append(dialog.entity)
+                            log.info(f"Found chat via dialogs: {getattr(dialog.entity, 'title', 'Unknown')} (@{getattr(dialog.entity, 'username', 'N/A')})")
 
                 except Exception as e:
-                    log.warning(f"Global search failed for '{keyword}': {e}")
+                    log.warning(f"Dialogs search failed for '{keyword}': {e}")
 
                 try:
-                    # Method 2: Channel search
-                    from telethon.tl.functions.channels import Search
-                    search_result = await self.client(Search(q=keyword, limit=self.config.telegram.max_search_results_per_keyword))
-
-                    if search_result and hasattr(search_result, 'chats'):
-                        for chat in search_result.chats:
-                            if (chat.id not in chats_found and self._is_suitable_chat(chat) and
-                                chat.id not in self.active_chats):
-                                chats_found.add(chat.id)
-                                new_chats.append(chat)
-                                log.info(f"Found chat via channel search: {getattr(chat, 'title', 'Unknown')}")
+                    # Method 2: Try to find public chats by username patterns
+                    if keyword.startswith('@'):
+                        try:
+                            entity = await self.client.get_entity(keyword)
+                            if (entity and self._is_suitable_chat(entity) and
+                                entity.id not in self.active_chats):
+                                chats_found.add(entity.id)
+                                new_chats.append(entity)
+                                log.info(f"Found chat via username: {getattr(entity, 'title', 'Unknown')}")
+                        except Exception as e:
+                            log.debug(f"Username lookup failed for '{keyword}': {e}")
 
                 except Exception as e:
-                    log.warning(f"Channel search failed for '{keyword}': {e}")
+                    log.warning(f"Username search failed for '{keyword}': {e}")
 
-                # Method 3: Direct username lookup for @ keywords
-                if keyword.startswith('@'):
-                    try:
-                        chat = await self.client.get_entity(keyword)
-                        if (chat and chat.id not in chats_found and self._is_suitable_chat(chat) and
-                            chat.id not in self.active_chats):
-                            chats_found.add(chat.id)
-                            new_chats.append(chat)
-                            log.info(f"Found chat via username lookup: {getattr(chat, 'title', 'Unknown')}")
-                    except Exception as e:
-                        log.debug(f"Username lookup failed for '{keyword}': {e}")
-
-                # Method 4: Try common chat patterns and variations
+                # Method 3: Try common chat patterns and variations for better matching
                 variations = self._generate_search_variations(keyword)
-                for variation in variations:
+                for variation in variations[:3]:  # Limit to top 3 variations
                     if variation != keyword:  # Avoid duplicate searches
                         try:
-                            result = await self.client(contacts.Search(q=variation, limit=20))
+                            # Search dialogs with variation
+                            async for dialog in self.client.iter_dialogs(limit=10):
+                                if (dialog.is_group and not dialog.is_channel and
+                                    self._is_suitable_chat(dialog.entity) and
+                                    dialog.entity.id not in self.active_chats and
+                                    dialog.entity.id not in chats_found):
 
-                            if result and hasattr(result, 'chats'):
-                                for chat in result.chats:
-                                    if (chat.id not in chats_found and self._is_suitable_chat(chat) and
-                                        chat.id not in self.active_chats):
-                                        chats_found.add(chat.id)
-                                        new_chats.append(chat)
-                                        log.info(f"Found chat via variation '{variation}': {getattr(chat, 'title', 'Unknown')}")
+                                    # Check if variation matches chat title/description
+                                    title = getattr(dialog.entity, 'title', '').lower()
+                                    desc = getattr(dialog.entity, 'about', '').lower()
+                                    username = getattr(dialog.entity, 'username', '').lower()
+
+                                    if (variation.lower() in title or
+                                        variation.lower() in desc or
+                                        variation.lower() in username):
+                                        chats_found.add(dialog.entity.id)
+                                        new_chats.append(dialog.entity)
+                                        log.info(f"Found chat via variation '{variation}': {getattr(dialog.entity, 'title', 'Unknown')}")
 
                         except Exception as e:
                             log.debug(f"Variation search failed for '{variation}': {e}")
@@ -697,7 +694,7 @@ class UserBot:
                                 log.error(f"Error sending scheduled message to {chat_id}: {e}")
 
                 # Sleep until next activity check (use configured interval)
-                sleep_time = self.config.telegram.chat_discovery_interval + random.uniform(-300, 300)  # ±5 minutes jitter
+                sleep_time = self.config.policy.chat_discovery_interval + random.uniform(-300, 300)  # ±5 minutes jitter
                 await asyncio.sleep(max(600, sleep_time))  # Minimum 10 minutes
 
             except Exception as e:
