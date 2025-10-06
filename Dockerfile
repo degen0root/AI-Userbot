@@ -22,8 +22,6 @@ COPY configs/ ./configs/
 COPY scripts/ ./scripts/
 COPY run.py .
 COPY manage.py .
-COPY test_bot_context.py .
-COPY test_human_behavior.py .
 
 # Установка psutil для healthcheck
 RUN pip install psutil
