@@ -79,7 +79,7 @@ if ssh "$REMOTE_HOST" "test -f $REMOTE_SESSION_FILE"; then
     echo -e "${GREEN}✓ Session exists:${NC} $REMOTE_SESSION_FILE"
 else
     echo -e "${YELLOW}No session found:${NC} $REMOTE_SESSION_FILE"
-    read -p "Run interactive login now (y/N)? " -n 1 -r; echo
+    read -p 'Run interactive login now (y/N)? ' -n 1 -r; echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo -e "${GREEN}Starting interactive QR login on remote...${NC}"
         # Build image to ensure scripts/create_session_qr_telethon.py is present in the container
