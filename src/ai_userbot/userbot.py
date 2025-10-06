@@ -61,6 +61,12 @@ class UserBot:
             elif self.config.policy.respond_to_personal_messages and not event.is_group:
                 await self._handle_personal_message(event)
 
+        # Handle replies and mentions in groups
+        @self.client.on(events.NewMessage(chats=None, incoming=True))
+        async def on_mention_or_reply(event: events.NewMessage.Event):
+            if event.is_group and await self._is_mention_or_reply_to_bot(event):
+                await self._handle_mention_or_reply(event)
+
         # Handle when bot is added to a new chat
         @self.client.on(events.ChatAction)
         async def on_chat_action(event: events.ChatAction.Event):
@@ -80,10 +86,10 @@ class UserBot:
         sender = await event.get_sender()
 
         # Check hourly limit for personal messages
-        if not await self._check_personal_hourly_limit(sender.id):
+        if not await self._check_personal_hourly_limit(sender.id if sender else 0):
             return
 
-        # Store message context
+        # Store message context and update persona experience
         await self.db.add_message_context(
             chat_id=0,  # Personal messages don't have chat_id
             user_id=sender.id if sender else 0,
@@ -91,6 +97,9 @@ class UserBot:
             message_text=message.text or "",
             timestamp=message.date
         )
+
+        # Update persona experience from personal interaction
+        await self._update_persona_experience(message.text or "", is_personal=True)
 
         # Check if we should respond (simplified logic for personal messages)
         if await self._should_respond_to_personal(sender, message):
@@ -112,8 +121,241 @@ class UserBot:
                         is_bot_message=True
                     )
 
+                    # Update persona experience from response
+                    await self._update_persona_experience(response, is_personal=True)
+
                 except Exception as e:
                     log.error(f"Error sending personal response: {e}")
+
+    async def _is_mention_or_reply_to_bot(self, event: events.NewMessage.Event) -> bool:
+        """Check if message is a mention or reply to the bot"""
+        message = event.message
+
+        # Check if it's a reply to bot's message
+        if message.reply_to_msg_id:
+            try:
+                reply_msg = await self.client.get_messages(event.chat_id, ids=message.reply_to_msg_id)
+                if reply_msg and reply_msg.from_id == (await self.client.get_me()).id:
+                    return True
+            except Exception as e:
+                log.debug(f"Could not check reply message: {e}")
+
+        # Check if bot is mentioned in the message
+        if message.text:
+            bot_username = (await self.client.get_me()).username
+            if bot_username and f"@{bot_username}" in message.text:
+                return True
+
+        return False
+
+    async def _handle_mention_or_reply(self, event: events.NewMessage.Event):
+        """Handle mentions and replies to the bot"""
+        message = event.message
+        chat_id = event.chat_id
+
+        # AI-powered message analysis
+        message_analysis = await self._analyze_message_tone(message, chat_id)
+
+        # Check if it's spam (very short or repetitive)
+        if self._is_potential_spam(message, message_analysis):
+            log.debug(f"Ignoring potential spam in chat {chat_id}")
+            return
+
+        # Check if we should respond (enhanced with AI analysis)
+        should_respond = await self._should_respond(chat_id, message, message_analysis)
+        if not should_respond:
+            return
+
+        # Check hourly message limit for this chat
+        if not await self._check_hourly_limit(chat_id):
+            log.debug(f"Hourly limit reached for chat {chat_id}")
+            return
+
+        # Simulate human-like typing
+        await self._simulate_human_behavior(chat_id, message)
+
+        # Generate response
+        response = await self._generate_response(chat_id, message)
+        if not response:
+            return
+
+        # Send response
+        try:
+            await self.client.send_message(chat_id, response)
+
+            # Log the response
+            await self.db.log_message(
+                chat_id=chat_id,
+                user_id=0,
+                message_text=response,
+                is_bot_message=True
+            )
+
+            # Update persona experience from interaction
+            await self._update_persona_experience(message.text or "", is_personal=False)
+            await self._update_persona_experience(response, is_personal=False)
+
+        except Exception as e:
+            log.error(f"Error sending response to chat {chat_id}: {e}")
+
+    def _is_potential_spam(self, message, message_analysis: dict) -> bool:
+        """Check if message looks like spam"""
+        text = message.text or ""
+
+        # Very short messages (less than 5 characters)
+        if len(text.strip()) < 5:
+            return True
+
+        # Repetitive content
+        if len(set(text.lower())) < len(text) * 0.3:  # Low character diversity
+            return True
+
+        # Too many mentions or links
+        mention_count = text.count('@')
+        link_count = text.count('http')
+
+        if mention_count > 3 or link_count > 2:
+            return True
+
+        # AI analysis for spam detection
+        if message_analysis.get("toxicity_level", 0) > 0.9:
+            return True
+
+        return False
+
+    async def _update_persona_experience(self, text: str, is_personal: bool = False):
+        """Update persona experience from interactions"""
+        try:
+            # Extract topics and themes from the text
+            topics = self._extract_topics_from_text(text)
+
+            # Update persona knowledge base
+            if hasattr(self.persona, 'knowledge_base'):
+                for topic in topics:
+                    if topic not in self.persona.knowledge_base:
+                        self.persona.knowledge_base[topic] = 0
+                    self.persona.knowledge_base[topic] += 1
+
+            # Update conversation style preferences
+            if hasattr(self.persona, 'conversation_styles'):
+                # Analyze text for style indicators
+                if len(text) > 50:  # Long messages
+                    self.persona.conversation_styles["detailed"] = min(1.0, self.persona.conversation_styles.get("detailed", 0) + 0.1)
+                elif len(text) < 20:  # Short messages
+                    self.persona.conversation_styles["concise"] = min(1.0, self.persona.conversation_styles.get("concise", 0) + 0.1)
+
+                # Analyze for emotional content
+                positive_words = ["спасибо", "класс", "отлично", "замечательно", "рад", "счастлив"]
+                negative_words = ["плохо", "ужасно", "ненавижу", "злюсь", "грустно"]
+
+                if any(word in text.lower() for word in positive_words):
+                    self.persona.conversation_styles["positive"] = min(1.0, self.persona.conversation_styles.get("positive", 0) + 0.05)
+                elif any(word in text.lower() for word in negative_words):
+                    self.persona.conversation_styles["empathetic"] = min(1.0, self.persona.conversation_styles.get("empathetic", 0) + 0.05)
+
+            # Update interaction count
+            if hasattr(self.persona, 'interaction_count'):
+                self.persona.interaction_count += 1
+
+            # Save updated persona to database if needed
+            await self._save_persona_updates()
+
+        except Exception as e:
+            log.error(f"Error updating persona experience: {e}")
+
+    def _extract_topics_from_text(self, text: str) -> List[str]:
+        """Extract topics and themes from text"""
+        topics = []
+
+        # Interest-related topics
+        interest_keywords = {
+            "йога": ["йога", "асана", "медитация", "пранаяма", "мантра"],
+            "психология": ["психология", "эмоции", "мышление", "самоанализ"],
+            "путешествия": ["путешествия", "поездка", "отпуск", "туризм"],
+            "саморазвитие": ["саморазвитие", "личностный рост", "мотивация"]
+        }
+
+        text_lower = text.lower()
+        for topic, keywords in interest_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                topics.append(topic)
+
+        # Add general topics
+        general_topics = ["работа", "семья", "друзья", "здоровье", "еда", "спорт", "музыка", "фильмы"]
+        for topic in general_topics:
+            if topic in text_lower:
+                topics.append(topic)
+
+        return list(set(topics))  # Remove duplicates
+
+    async def _save_persona_updates(self):
+        """Save updated persona data to database"""
+        # This would save the updated persona knowledge to database
+        # Implementation depends on how persona data is stored
+        pass
+
+    async def join_chats_by_list(self, chat_list: List[str]):
+        """Join multiple chats by their usernames or IDs"""
+        joined_count = 0
+
+        for chat_identifier in chat_list:
+            try:
+                # Try to get chat entity
+                try:
+                    if chat_identifier.startswith('@'):
+                        chat = await self.client.get_entity(chat_identifier)
+                    else:
+                        chat = await self.client.get_entity(int(chat_identifier))
+                except Exception as e:
+                    log.warning(f"Could not find chat {chat_identifier}: {e}")
+                    continue
+
+                # Check if chat meets criteria
+                if not self._is_suitable_chat(chat):
+                    log.info(f"Chat {chat_identifier} doesn't meet criteria, skipping")
+                    continue
+
+                # Join chat
+                await self.client(JoinChannelRequest(chat.id))
+
+                # Analyze chat content
+                recent_messages = []
+                async for message in self.client.iter_messages(chat.id, limit=10):
+                    if message.text:
+                        recent_messages.append(message.text)
+
+                # Deep analysis
+                chat_analysis = await self._analyze_chat_content_deep(chat, recent_messages)
+
+                if chat_analysis["should_stay"]:
+                    # Add to database
+                    await self.db.add_chat(
+                        chat_id=chat.id,
+                        title=getattr(chat, 'title', 'Unknown'),
+                        username=getattr(chat, 'username', None),
+                        members_count=getattr(chat, 'participants_count', 0),
+                        ai_analysis=chat_analysis
+                    )
+
+                    self.active_chats.add(chat.id)
+                    joined_count += 1
+                    log.info(f"Successfully joined chat: {getattr(chat, 'title', 'Unknown')}")
+                else:
+                    log.info(f"Leaving chat {chat_identifier} after analysis: {chat_analysis['reason']}")
+                    await self.client.delete_dialog(chat.id)
+
+            except Exception as e:
+                log.error(f"Error joining chat {chat_identifier}: {e}")
+
+        log.info(f"Successfully joined {joined_count} out of {len(chat_list)} chats")
+
+    async def _join_predefined_chats(self):
+        """Auto-join predefined chats on startup"""
+        try:
+            await asyncio.sleep(10)  # Wait for bot to fully start
+            await self.join_chats_by_list(self.config.telegram.predefined_chats)
+        except Exception as e:
+            log.error(f"Error joining predefined chats: {e}")
 
     async def _should_respond_to_personal(self, sender, message) -> bool:
         """Determine if we should respond to a personal message"""
@@ -149,7 +391,7 @@ class UserBot:
             context = f"Пользователь написал: {message.text or ''}"
 
             response = await self.llm.generate_response(
-                system_prompt=f"Ты {self.persona.name}, {self.persona.age} лет. {self.persona.bio}. Общайся естественно и дружелюбно.",
+                system_prompt=self.persona.get_system_prompt(),
                 user_message=context,
                 chat_context={"is_personal": True}
             )
@@ -178,6 +420,10 @@ class UserBot:
         asyncio.create_task(self._chat_discovery_loop())
         asyncio.create_task(self._cleanup_old_messages())
         asyncio.create_task(self._activity_scheduler())
+
+        # Auto-join predefined chats if enabled
+        if self.config.telegram.auto_join_predefined_chats and self.config.telegram.predefined_chats:
+            asyncio.create_task(self._join_predefined_chats())
     
     async def stop(self):
         """Stop the userbot"""

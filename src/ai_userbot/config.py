@@ -115,6 +115,14 @@ class PolicySection(BaseModel):
     respond_to_personal_messages: bool = False  # Whether to respond to personal messages
     max_personal_replies_per_hour: int = 10  # Max replies to personal messages per hour
 
+    # Manual chat joining settings
+    predefined_chats: List[str] = Field(default_factory=lambda: [
+        # Add your chat usernames or IDs here
+        # "@example_chat",
+        # "123456789",
+    ])
+    auto_join_predefined_chats: bool = True  # Auto-join predefined chats on startup
+
 
 class LLMSection(BaseModel):
     provider: str = Field(default="google")  # Default to Google for better performance

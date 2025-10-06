@@ -17,7 +17,69 @@ class PersonaManager:
         """Initialize additional personality traits for more natural behavior"""
         self.mood_states = ["радостная", "спокойная", "задумчивая", "вдохновленная", "мечтательная"]
         self.current_mood = random.choice(self.mood_states)
-        
+
+        # Experience and knowledge accumulation
+        self.knowledge_base = {}  # topic: experience_level
+        self.conversation_styles = {
+            "detailed": 0.0,
+            "concise": 0.0,
+            "positive": 0.0,
+            "empathetic": 0.0,
+            "humorous": 0.0
+        }
+        self.interaction_count = 0
+        self.topics_discussed = set()
+
+    def update_experience(self, topics: List[str], conversation_style: str = None):
+        """Update persona experience and knowledge from interactions"""
+        # Update topic knowledge
+        for topic in topics:
+            if topic not in self.knowledge_base:
+                self.knowledge_base[topic] = 0
+            self.knowledge_base[topic] += 1
+            self.topics_discussed.add(topic)
+
+        # Update conversation styles
+        if conversation_style:
+            if conversation_style in self.conversation_styles:
+                self.conversation_styles[conversation_style] = min(1.0, self.conversation_styles[conversation_style] + 0.1)
+
+        self.interaction_count += 1
+
+        # Update mood based on interaction count and topics
+        self._update_mood_from_experience()
+
+    def _update_mood_from_experience(self):
+        """Update mood based on accumulated experience"""
+        if self.interaction_count > 100:
+            # More experienced persona becomes more confident
+            self.mood_states = ["уверенная", "спокойная", "вдохновленная", "мечтательная", "радостная"]
+        elif self.interaction_count > 50:
+            # Moderately experienced
+            self.mood_states = ["спокойная", "задумчивая", "вдохновленная", "мечтательная"]
+
+        # Update current mood based on knowledge diversity
+        if len(self.topics_discussed) > 10:
+            self.current_mood = "мудрая"
+        elif len(self.topics_discussed) > 5:
+            self.current_mood = "опытная"
+
+    def get_adaptive_system_prompt(self) -> str:
+        """Generate adaptive system prompt based on accumulated experience"""
+        base_prompt = self.get_system_prompt()
+
+        # Add experience-based modifications
+        if self.interaction_count > 100:
+            base_prompt += "\n\nТы очень опытная в общении, умеешь поддерживать глубокие разговоры и давать мудрые советы."
+
+        if self.conversation_styles.get("empathetic", 0) > 0.5:
+            base_prompt += "\n\nТы очень эмпатичная и умеешь слушать людей, понимаешь их чувства."
+
+        if self.conversation_styles.get("detailed", 0) > 0.5:
+            base_prompt += "\n\nТы предпочитаешь детальные ответы, делишься личным опытом и примерами."
+
+        return base_prompt
+
         # Extended background story
         self.background = {
             "профессия": "мама в декрете, увлекаюсь женскими практиками",
@@ -107,14 +169,47 @@ class PersonaManager:
     def get_description(self) -> str:
         """Get persona description for LLM prompt"""
         hobbies = ", ".join(self.background["хобби"][:2])
+
+        # Add experience-based description
+        experience_text = ""
+        if self.interaction_count > 100:
+            experience_text = "Я много общалась с людьми и накопила большой опыт в поддержке и совете. "
+        elif self.interaction_count > 50:
+            experience_text = "У меня есть опыт общения с разными людьми. "
+        elif self.interaction_count > 20:
+            experience_text = "Я начинаю лучше понимать людей. "
+
+        # Add knowledge-based description
+        if len(self.topics_discussed) > 10:
+            experience_text += "Я разбираюсь во многих темах. "
+
         return (
             f"{self.config.name}, {self.config.age} лет, {self.background['профессия']} из {self.background['город']}. "
             f"У меня {self.background['семья']}. "
             f"Увлекаюсь: {hobbies}. "
             f"Сейчас в {self.current_mood} настроении. "
             f"Я {self.background['особенность']}. "
-            f"{self.background['жизненный_опыт']}."
+            f"{self.background['жизненный_опыт']}. "
+            f"{experience_text}"
         )
+
+    def get_system_prompt(self) -> str:
+        """Get base system prompt with accumulated experience"""
+        base_description = self.get_description()
+
+        # Add experience-based prompt modifications
+        experience_prompt = ""
+
+        if self.interaction_count > 100:
+            experience_prompt += "Ты очень опытная в общении, умеешь поддерживать глубокие разговоры и давать мудрые советы. "
+
+        if self.conversation_styles.get("empathetic", 0) > 0.5:
+            experience_prompt += "Ты очень эмпатичная и умеешь слушать людей, понимаешь их чувства. "
+
+        if self.conversation_styles.get("detailed", 0) > 0.5:
+            experience_prompt += "Ты предпочитаешь детальные ответы, делишься личным опытом и примерами. "
+
+        return f"Ты {base_description}. {experience_prompt}{self.config.writing_style}."
     
     def get_interests_keywords(self) -> List[str]:
         """Get all interest-related keywords"""
