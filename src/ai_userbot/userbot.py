@@ -388,5 +388,7 @@ class UserBot:
     async def _cleanup_old_messages(self):
         """Periodic cleanup of old message history"""
         while True:
-            await self.db.cleanup_old_messages(self.config.db.message_history_days)
+            # Clean messages older than 30 days
+            cutoff_date = datetime.now() - timedelta(days=30)
+            await self.db.cleanup_old_messages(cutoff_date)
             await asyncio.sleep(86400)  # Run daily
