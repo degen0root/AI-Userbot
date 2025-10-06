@@ -187,6 +187,19 @@ python manage.py clear-session
 
 ## 🔧 Расширенная настройка
 
+### QR‑вход в Telegram (Telethon)
+
+- Скрипт: `scripts/create_session_qr_telethon.py` — простой QR‑логин для Telethon с отображением QR-кода в терминале.
+
+Пример запуска в контейнере (ASCII‑QR, сессия в volume):
+
+```bash
+docker compose run --rm --entrypoint "" -it ai-userbot \
+  python /app/scripts/create_session_qr_telethon.py
+```
+
+Переменные окружения по умолчанию: `TELEGRAM_API_ID`/`API_ID`, `TELEGRAM_API_HASH`/`API_HASH`, `SESSION_NAME`.
+
 ### Добавление новых интересов
 
 Расширьте список интересов персоны для лучшего таргетинга:

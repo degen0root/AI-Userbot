@@ -1,0 +1,17 @@
+services:
+  qr-login:
+    image: python:3.11-slim
+    container_name: ai-userbot-qr
+    working_dir: /app
+    volumes:
+      - .:/app
+    tty: true
+    stdin_open: true
+    environment:
+      # Pass your creds via env before running:
+      # export TELEGRAM_API_ID=...; export TELEGRAM_API_HASH=...
+      - TELEGRAM_API_ID
+      - TELEGRAM_API_HASH
+    command: >-
+      bash -lc "pip install --no-cache-dir telethon qrcode
+      && python scripts/create_session_qr_telethon.py"

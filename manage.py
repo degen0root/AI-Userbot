@@ -62,10 +62,10 @@ async def show_stats(config_path: Path):
 
 
 async def clear_session(config_path: Path):
-    """Clear Pyrogram session"""
+    """Clear Telethon session"""
     config = load_config(config_path)
     session_file = Path(f"{config.telegram.session_name}.session")
-    
+
     if session_file.exists():
         session_file.unlink()
         console.print("[green]Session cleared successfully[/green]")
@@ -134,7 +134,7 @@ async def main():
     subparsers.add_parser("stats", help="Show bot statistics")
     
     # Clear session command
-    subparsers.add_parser("clear-session", help="Clear Pyrogram session")
+    subparsers.add_parser("clear-session", help="Clear Telethon session")
     
     # Reset database command
     subparsers.add_parser("reset-db", help="Reset the database")
