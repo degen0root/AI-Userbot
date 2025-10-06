@@ -25,7 +25,9 @@ class TelegramSection(BaseModel):
     search_keywords: List[str] = Field(default_factory=lambda: [
         "женский", "девушки", "подруги", "мамочки", "женщины",
         "бали", "балифорум", "таиланд", "путешествия", "travel",
-        "москва", "moscow"
+        "москва", "moscow", "спб", "питер", "россия",
+        "женский чат", "девушки чат", "мамочки чат",
+        "путешествия россия", "туризм россия"
     ])
     min_members: int = Field(default=50)
     max_members: int = Field(default=10000)
@@ -101,8 +103,18 @@ class PolicySection(BaseModel):
     night_messages_probability: float = 0.05
 
     # Chat discovery settings
-    chat_discovery_interval: int = 3600  # 1 hour between discovery cycles
-    max_new_chats_per_cycle: int = 5  # Maximum new chats to join per cycle
+    chat_discovery_interval: int = 1800  # 30 minutes between discovery cycles
+    max_new_chats_per_cycle: int = 10  # Maximum new chats to join per cycle
+    max_search_results_per_keyword: int = 50  # Maximum search results per keyword
+    enable_external_chat_search: bool = False  # Enable external chat search resources
+    external_search_urls: List[str] = Field(default_factory=lambda: [
+        "https://telegramchannels.me/channels",
+        "https://telegram-group.com/channels"
+    ])
+
+    # Personal messages settings
+    respond_to_personal_messages: bool = False  # Whether to respond to personal messages
+    max_personal_replies_per_hour: int = 10  # Max replies to personal messages per hour
 
 
 class LLMSection(BaseModel):

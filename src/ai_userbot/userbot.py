@@ -53,11 +53,13 @@ class UserBot:
     
     def _setup_handlers(self):
         """Setup message handlers"""
-        # Handle messages in groups
+        # Handle messages in groups and personal messages
         @self.client.on(events.NewMessage(chats=None, incoming=True))
-        async def on_group_message(event: events.NewMessage.Event):
+        async def on_message(event: events.NewMessage.Event):
             if event.is_group:
                 await self._handle_group_message(event)
+            elif self.config.policy.respond_to_personal_messages and not event.is_group:
+                await self._handle_personal_message(event)
 
         # Handle when bot is added to a new chat
         @self.client.on(events.ChatAction)
@@ -68,6 +70,99 @@ class UserBot:
             elif event.user_kicked and event.user_id == (await self.client.get_me()).id:
                 log.info(f"Bot was removed from chat {event.chat_id}")
                 await self._handle_chat_left(event.chat_id)
+
+    async def _handle_personal_message(self, event: events.NewMessage.Event):
+        """Handle personal messages (DMs)"""
+        if not self.config.policy.respond_to_personal_messages:
+            return
+
+        message = event.message
+        sender = await event.get_sender()
+
+        # Check hourly limit for personal messages
+        if not await self._check_personal_hourly_limit(sender.id):
+            return
+
+        # Store message context
+        await self.db.add_message_context(
+            chat_id=0,  # Personal messages don't have chat_id
+            user_id=sender.id if sender else 0,
+            username=sender.username if sender and hasattr(sender, 'username') else "",
+            message_text=message.text or "",
+            timestamp=message.date
+        )
+
+        # Check if we should respond (simplified logic for personal messages)
+        if await self._should_respond_to_personal(sender, message):
+            # Simulate human-like typing
+            await self._simulate_human_behavior(0, message)  # 0 for personal
+
+            # Generate response
+            response = await self._generate_personal_response(message)
+
+            if response:
+                try:
+                    await self.client.send_message(sender.id, response)
+
+                    # Log the response
+                    await self.db.log_message(
+                        chat_id=0,
+                        user_id=0,
+                        message_text=response,
+                        is_bot_message=True
+                    )
+
+                except Exception as e:
+                    log.error(f"Error sending personal response: {e}")
+
+    async def _should_respond_to_personal(self, sender, message) -> bool:
+        """Determine if we should respond to a personal message"""
+        # Don't respond to our own messages
+        if sender and sender.id == (await self.client.get_me()).id:
+            return False
+
+        # Simple relevance check - respond to most messages
+        text = message.text or ""
+        if len(text.strip()) < 3:  # Too short
+            return False
+
+        # Check for forbidden terms
+        for term in self.config.policy.forbidden_terms:
+            if term.lower() in text.lower():
+                return False
+
+        return True
+
+    async def _check_personal_hourly_limit(self, user_id: int) -> bool:
+        """Check if we've reached the hourly limit for personal messages to this user"""
+        current_time = datetime.now()
+        hour_start = current_time.replace(minute=0, second=0, microsecond=0)
+
+        # Get messages sent to this user in the last hour
+        recent_messages = await self.db.get_personal_messages_since(user_id, hour_start)
+
+        return len(recent_messages) < self.config.policy.max_personal_replies_per_hour
+
+    async def _generate_personal_response(self, message) -> Optional[str]:
+        """Generate response to personal message"""
+        try:
+            context = f"Пользователь написал: {message.text or ''}"
+
+            response = await self.llm.generate_response(
+                system_prompt=f"Ты {self.persona.name}, {self.persona.age} лет. {self.persona.bio}. Общайся естественно и дружелюбно.",
+                user_message=context,
+                chat_context={"is_personal": True}
+            )
+
+            if response:
+                # Add human-like variations
+                response = self._add_human_variations(response)
+
+            return response
+
+        except Exception as e:
+            log.error(f"Error generating personal response: {e}")
+            return None
     
     async def start(self):
         """Start the userbot"""
@@ -139,23 +234,69 @@ class UserBot:
         if not hasattr(chat, 'megagroup') and not (hasattr(chat, 'broadcast') and not chat.broadcast):
             return False
 
+        # Must be joinable
+        if not getattr(chat, 'is_joinable', True):
+            return False
+
         # Check against forbidden terms in title/description
         title = getattr(chat, 'title', '').lower()
         description = getattr(chat, 'about', '').lower()
+        username = getattr(chat, 'username', '').lower()
+
+        chat_text = f"{title} {description} {username}"
 
         for term in self.config.policy.forbidden_terms:
-            if term.lower() in title or term.lower() in description:
+            if term.lower() in chat_text:
                 return False
 
-        # Check if it's a women's chat based on keywords
-        women_keywords = ["женск", "девушк", "мамочк", "подруг", "мам"]
-        chat_text = f"{title} {description}"
+        # Check if it's a relevant chat based on keywords
+        relevant_keywords = [
+            "женск", "девушк", "мамочк", "подруг", "мам", "женщин",
+            "бали", "таиланд", "путешеств", "travel", "тур",
+            "москва", "мск", "спб", "питер", "россия"
+        ]
 
-        women_count = sum(1 for keyword in women_keywords if keyword in chat_text)
-        if women_count > 0:
+        relevant_count = sum(1 for keyword in relevant_keywords if keyword in chat_text)
+        if relevant_count > 0:
+            return True
+
+        # Also accept chats with reasonable size (not too small, not too large)
+        participants_count = getattr(chat, 'participants_count', 0)
+        if 50 <= participants_count <= 50000:  # Reasonable size range
             return True
 
         return False
+
+    def _generate_search_variations(self, keyword: str) -> List[str]:
+        """Generate search variations for better chat discovery"""
+        variations = []
+
+        # Add common prefixes and suffixes
+        prefixes = ["чат", "группа", "клуб", "сообщество", "форум"]
+        suffixes = ["обсуждения", "дискуссии", "разговоры", "чат"]
+
+        for prefix in prefixes:
+            variations.append(f"{prefix} {keyword}")
+
+        for suffix in suffixes:
+            variations.append(f"{keyword} {suffix}")
+
+        # Add location-based variations for travel keywords
+        if keyword.lower() in ["бали", "таиланд", "путешествия", "travel"]:
+            locations = ["россия", "москва", "спб", "питер"]
+            for location in locations:
+                variations.append(f"{keyword} {location}")
+                variations.append(f"{location} {keyword}")
+
+        # Add variations for women's chats
+        if keyword.lower() in ["женск", "девушк", "мамочк"]:
+            categories = ["путешествия", "туризм", "отдых", "досуг"]
+            for category in categories:
+                variations.append(f"{keyword} {category}")
+
+        # Remove duplicates and limit
+        variations = list(set(variations))
+        return variations[:10]  # Limit to prevent too many searches
 
     async def _get_pinned_messages(self, chat_id: int):
         """Get pinned messages from a chat"""
@@ -432,16 +573,68 @@ class UserBot:
         
         for keyword in self.config.telegram.search_keywords:
             try:
-                # Search for public chats using the correct API
-                # Note: Telethon's search functionality may have changed, using basic approach
-                # For now, we'll skip the search and rely on manual chat joining
-                result = None
+                # Enhanced chat search using multiple methods
+                chats_found = set()
 
-                if result and hasattr(result, 'chats'):
-                    for chat in result.chats:
-                        if chat.is_group and not chat.is_private and chat.is_joinable:
-                            if chat.id not in self.active_chats:
+                try:
+                    # Method 1: Global search using contacts.Search
+                    result = await self.client(contacts.Search(q=keyword, limit=self.config.telegram.max_search_results_per_keyword))
+
+                    if result and hasattr(result, 'chats'):
+                        for chat in result.chats:
+                            if self._is_suitable_chat(chat) and chat.id not in self.active_chats:
+                                chats_found.add(chat.id)
                                 new_chats.append(chat)
+                                log.info(f"Found chat via global search: {getattr(chat, 'title', 'Unknown')} (@{getattr(chat, 'username', 'N/A')})")
+
+                except Exception as e:
+                    log.warning(f"Global search failed for '{keyword}': {e}")
+
+                try:
+                    # Method 2: Channel search
+                    from telethon.tl.functions.channels import Search
+                    search_result = await self.client(Search(q=keyword, limit=self.config.telegram.max_search_results_per_keyword))
+
+                    if search_result and hasattr(search_result, 'chats'):
+                        for chat in search_result.chats:
+                            if (chat.id not in chats_found and self._is_suitable_chat(chat) and
+                                chat.id not in self.active_chats):
+                                chats_found.add(chat.id)
+                                new_chats.append(chat)
+                                log.info(f"Found chat via channel search: {getattr(chat, 'title', 'Unknown')}")
+
+                except Exception as e:
+                    log.warning(f"Channel search failed for '{keyword}': {e}")
+
+                # Method 3: Direct username lookup for @ keywords
+                if keyword.startswith('@'):
+                    try:
+                        chat = await self.client.get_entity(keyword)
+                        if (chat and chat.id not in chats_found and self._is_suitable_chat(chat) and
+                            chat.id not in self.active_chats):
+                            chats_found.add(chat.id)
+                            new_chats.append(chat)
+                            log.info(f"Found chat via username lookup: {getattr(chat, 'title', 'Unknown')}")
+                    except Exception as e:
+                        log.debug(f"Username lookup failed for '{keyword}': {e}")
+
+                # Method 4: Try common chat patterns and variations
+                variations = self._generate_search_variations(keyword)
+                for variation in variations:
+                    if variation != keyword:  # Avoid duplicate searches
+                        try:
+                            result = await self.client(contacts.Search(q=variation, limit=20))
+
+                            if result and hasattr(result, 'chats'):
+                                for chat in result.chats:
+                                    if (chat.id not in chats_found and self._is_suitable_chat(chat) and
+                                        chat.id not in self.active_chats):
+                                        chats_found.add(chat.id)
+                                        new_chats.append(chat)
+                                        log.info(f"Found chat via variation '{variation}': {getattr(chat, 'title', 'Unknown')}")
+
+                        except Exception as e:
+                            log.debug(f"Variation search failed for '{variation}': {e}")
             except Exception as e:
                 if hasattr(e, 'seconds'):
                     await asyncio.sleep(e.seconds)
@@ -453,7 +646,7 @@ class UserBot:
             
             await asyncio.sleep(random.uniform(5, 15))  # Anti-flood delay
         
-        return new_chats[:self.config.policy.max_new_chats_per_cycle]
+        return new_chats[:self.config.telegram.max_new_chats_per_cycle]
 
     async def _cleanup_old_messages(self):
         """Periodic cleanup of old message history"""
@@ -503,8 +696,9 @@ class UserBot:
                             except Exception as e:
                                 log.error(f"Error sending scheduled message to {chat_id}: {e}")
 
-                # Sleep until next activity check
-                await asyncio.sleep(random.uniform(1800, 3600))  # 30 minutes to 1 hour
+                # Sleep until next activity check (use configured interval)
+                sleep_time = self.config.telegram.chat_discovery_interval + random.uniform(-300, 300)  # ±5 minutes jitter
+                await asyncio.sleep(max(600, sleep_time))  # Minimum 10 minutes
 
             except Exception as e:
                 log.error(f"Error in activity scheduler: {e}")

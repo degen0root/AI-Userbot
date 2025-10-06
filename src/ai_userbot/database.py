@@ -342,3 +342,16 @@ class ChatDatabase:
 
             result = await session.execute(query)
             return result.scalars().all()
+
+    async def get_personal_messages_since(self, user_id: int, since: datetime) -> List[MessageRecord]:
+        """Get personal messages sent to a specific user since a specific time"""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(MessageRecord).where(
+                    MessageRecord.chat_id == 0,  # Personal messages have chat_id = 0
+                    MessageRecord.user_id == user_id,
+                    MessageRecord.timestamp >= since,
+                    MessageRecord.is_bot_message == True
+                )
+            )
+            return result.scalars().all()
