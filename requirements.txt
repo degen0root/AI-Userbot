@@ -1,6 +1,9 @@
 # Telegram userbot library
 telethon>=1.35.0
 
+# QR code generation for session creation
+qrcode>=7.4.2
+
 # AI and LLM
 openai>=1.0.0
 anthropic>=0.31.0
