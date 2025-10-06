@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import pytz
 
 from telethon import TelegramClient, events, types, errors
+from telethon.errors import FloodWait
 from telethon.tl.types import Message, Chat, User
 from telethon.tl.functions.channels import JoinChannelRequest
 # MessageId is not directly available, we'll use message.id instead
