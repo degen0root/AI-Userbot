@@ -307,6 +307,146 @@ class UserBot:
         except Exception as e:
             log.warning(f"Could not get pinned messages for chat {chat_id}: {e}")
         return []
+
+    async def _analyze_chat_content(self, chat) -> dict:
+        """Initial AI analysis of chat before joining"""
+        try:
+            # Basic info analysis
+            title = getattr(chat, 'title', '')
+            description = getattr(chat, 'about', '')
+            username = getattr(chat, 'username', '')
+            participants_count = getattr(chat, 'participants_count', 0)
+
+            # Prepare analysis prompt
+            analysis_prompt = f"""
+            Проанализируй этот Telegram чат и определи, подходит ли он для молодой женщины по имени Анна (28 лет, интересуется йогой, медитацией, психологией, саморазвитием, путешествиями).
+
+            Информация о чате:
+            - Название: {title}
+            - Описание: {description}
+            - Username: @{username}
+            - Количество участников: {participants_count}
+
+            Критерии оценки:
+            1. Релевантность интересам Анны (йога, медитация, психология, путешествия)
+            2. Женская аудитория (женские чаты, мамочки, подруги)
+            3. Положительная атмосфера (без агрессии, спама, политики)
+            4. Активность (не слишком маленький чат)
+
+            Верни JSON в формате:
+            {{
+                "should_join": true/false,
+                "relevance_score": 0.0-1.0,
+                "reason": "краткое объяснение",
+                "confidence": 0.0-1.0,
+                "chat_type": "women/travel/local/general"
+            }}
+            """
+
+            response = await self.llm.generate_response(
+                system_prompt="Ты эксперт по анализу Telegram чатов. Оценивай строго и честно.",
+                user_message=analysis_prompt,
+                chat_context={"analysis_type": "pre_join"}
+            )
+
+            # Parse JSON response (simplified parsing)
+            import json
+            try:
+                result = json.loads(response)
+                return result
+            except:
+                # Fallback if JSON parsing fails
+                return {
+                    "should_join": False,
+                    "relevance_score": 0.0,
+                    "reason": "Не удалось проанализировать",
+                    "confidence": 0.0,
+                    "chat_type": "unknown"
+                }
+
+        except Exception as e:
+            log.error(f"Error analyzing chat {chat.id}: {e}")
+            return {
+                "should_join": False,
+                "relevance_score": 0.0,
+                "reason": f"Ошибка анализа: {e}",
+                "confidence": 0.0,
+                "chat_type": "error"
+            }
+
+    async def _analyze_chat_content_deep(self, chat, recent_messages: List[str]) -> dict:
+        """Deep AI analysis of chat content after joining"""
+        try:
+            # Combine recent messages for analysis
+            content_sample = "\n".join(recent_messages[:10])  # First 10 messages
+
+            if not content_sample.strip():
+                return {
+                    "should_stay": True,
+                    "relevance_score": 0.7,
+                    "reason": "Пустой чат, даем шанс",
+                    "toxicity_level": 0.0,
+                    "activity_level": 0.0
+                }
+
+            # Prepare deep analysis prompt
+            deep_analysis_prompt = f"""
+            Проанализируй содержимое этого Telegram чата и дай подробную оценку.
+
+            Название чата: {getattr(chat, 'title', 'Unknown')}
+            Недавние сообщения:
+            {content_sample}
+
+            Оцени по критериям:
+            1. Релевантность интересам (йога, медитация, психология, путешествия) - 0-1
+            2. Аудитория (женщины, мамы, подруги) - 0-1
+            3. Атмосфера (дружественная, позитивная) - 0-1
+            4. Уровень токсичности (хамство, грубость, агрессия) - 0-1
+            5. Активность (живое общение) - 0-1
+
+            Верни JSON в формате:
+            {{
+                "should_stay": true/false,
+                "relevance_score": 0.0-1.0,
+                "toxicity_level": 0.0-1.0,
+                "activity_level": 0.0-1.0,
+                "mood": "positive/neutral/negative",
+                "reason": "подробное объяснение решения"
+            }}
+            """
+
+            response = await self.llm.generate_response(
+                system_prompt="Ты эксперт по анализу социальных взаимодействий в Telegram. Будь максимально честным и объективным.",
+                user_message=deep_analysis_prompt,
+                chat_context={"analysis_type": "post_join"}
+            )
+
+            # Parse JSON response
+            import json
+            try:
+                result = json.loads(response)
+                return result
+            except:
+                # Fallback analysis
+                return {
+                    "should_stay": True,
+                    "relevance_score": 0.5,
+                    "toxicity_level": 0.0,
+                    "activity_level": 0.5,
+                    "mood": "neutral",
+                    "reason": "Не удалось проанализировать содержимое"
+                }
+
+        except Exception as e:
+            log.error(f"Error in deep analysis for chat {chat.id}: {e}")
+            return {
+                "should_stay": False,
+                "relevance_score": 0.0,
+                "toxicity_level": 1.0,
+                "activity_level": 0.0,
+                "mood": "error",
+                "reason": f"Ошибка анализа содержимого: {e}"
+            }
     
     def _get_chat_category(self, chat_title: str) -> str:
         """Determine chat category based on title"""
@@ -371,8 +511,16 @@ class UserBot:
             timestamp=message.date
         )
 
-        # Check if we should respond
-        should_respond = await self._should_respond(chat_id, message)
+        # AI-powered message analysis
+        message_analysis = await self._analyze_message_tone(message, chat_id)
+
+        # Ignore toxic or rude messages
+        if message_analysis["toxicity_level"] > 0.7:
+            log.debug(f"Ignoring toxic message in chat {chat_id}")
+            return
+
+        # Check if we should respond (enhanced with AI analysis)
+        should_respond = await self._should_respond(chat_id, message, message_analysis)
         if not should_respond:
             return
 
@@ -415,8 +563,8 @@ class UserBot:
         except Exception as e:
             log.error(f"Error sending message to chat {chat_id}: {e}")
 
-    async def _should_respond(self, chat_id: int, message) -> bool:
-        """Decide if bot should respond to the message"""
+    async def _should_respond(self, chat_id: int, message, message_analysis: dict = None) -> bool:
+        """Decide if bot should respond to the message (enhanced with AI analysis)"""
         # Check rate limits
         if not self._check_rate_limits(chat_id):
             return False
@@ -425,7 +573,32 @@ class UserBot:
         if message.text and any(term.lower() in message.text.lower() for term in self.config.policy.forbidden_terms):
             return False
 
-        # Get chat category
+        # Use AI analysis for better decision making
+        if message_analysis:
+            # AI already analyzed toxicity, use its recommendation
+            relevance_score = message_analysis.get("relevance_score", 0.5)
+            toxicity_level = message_analysis.get("toxicity_level", 0.0)
+
+            # Don't respond to highly toxic messages
+            if toxicity_level > 0.8:
+                return False
+
+            # Adjust response probability based on AI analysis
+            base_probability = 0.3  # Base probability
+
+            # Boost for relevant messages
+            if relevance_score > 0.7:
+                base_probability *= 2.0
+            elif relevance_score > 0.5:
+                base_probability *= 1.5
+
+            # Reduce for toxic messages
+            if toxicity_level > 0.3:
+                base_probability *= 0.5
+
+            return random.random() < base_probability
+
+        # Fallback to old logic if AI analysis fails
         try:
             chat = await self.client.get_entity(chat_id)
             chat_title = chat.title if hasattr(chat, 'title') else ""
@@ -435,25 +608,89 @@ class UserBot:
 
         # Get recent context
         context = await self.db.get_recent_messages(chat_id, limit=10)
-        
+
         # Calculate relevance score
         relevance = await self._calculate_relevance(message, context)
-        
+
         # Adjust chance based on chat category
         base_chance = self.config.policy.response_probability[chat_category]
-        
+
         # Boost if message mentions persona interests
         if any(interest in (message.text or "").lower() for interest in self.persona.interests):
             base_chance *= 1.5
-        
+
         # Boost if replied to bot
         if message.reply_to_msg_id:
             reply_msg = await self.client.get_messages(chat_id, ids=message.reply_to_msg_id)
             if reply_msg.from_id == (await self.client.get_me()).id:
                 base_chance *= 2.0
-        
+
         # Random decision based on chance
-        return random.random() < base_chance and relevance > self.config.policy.min_relevance_score
+            return random.random() < base_chance and relevance > self.config.policy.min_relevance_score
+
+    async def _analyze_message_tone(self, message, chat_id: int) -> dict:
+        """Analyze message tone and relevance using AI"""
+        try:
+            message_text = message.text or ""
+
+            # Quick check for obviously toxic content
+            toxic_indicators = ["сука", "пидор", "хуй", "ебан", "fuck", "shit", "bitch"]
+            toxicity_level = sum(1 for indicator in toxic_indicators if indicator.lower() in message_text.lower()) / len(toxic_indicators)
+
+            # AI analysis for more nuanced detection
+            analysis_prompt = f"""
+            Проанализируй это сообщение в Telegram чате и оцени его тон и релевантность.
+
+            Сообщение: "{message_text}"
+
+            Оцени по шкале 0-1:
+            1. Токсичность (хамство, грубость, агрессия)
+            2. Релевантность интересам Анны (йога, медитация, психология, путешествия)
+            3. Положительность тона (дружественный, позитивный)
+
+            Верни JSON в формате:
+            {{
+                "toxicity_level": 0.0-1.0,
+                "relevance_score": 0.0-1.0,
+                "tone_score": 0.0-1.0,
+                "should_ignore": true/false,
+                "reason": "краткое объяснение"
+            }}
+            """
+
+            response = await self.llm.generate_response(
+                system_prompt="Ты эксперт по анализу социальных взаимодействий. Будь максимально объективным.",
+                user_message=analysis_prompt,
+                chat_context={"analysis_type": "message_tone"}
+            )
+
+            # Parse JSON response
+            import json
+            try:
+                result = json.loads(response)
+                # Override toxicity with quick check if it's obviously toxic
+                if toxicity_level > 0.5:
+                    result["toxicity_level"] = max(result.get("toxicity_level", 0), toxicity_level)
+                return result
+            except:
+                # Fallback if JSON parsing fails
+                return {
+                    "toxicity_level": toxicity_level,
+                    "relevance_score": 0.5,
+                    "tone_score": 0.5,
+                    "should_ignore": toxicity_level > 0.7,
+                    "reason": "Не удалось проанализировать"
+                }
+
+        except Exception as e:
+            log.error(f"Error analyzing message tone: {e}")
+            return {
+                "toxicity_level": 0.0,
+                "relevance_score": 0.5,
+                "tone_score": 0.5,
+                "should_ignore": False,
+                "reason": f"Ошибка анализа: {e}"
+            }
 
     def _check_rate_limits(self, chat_id: int) -> bool:
         """Check if we can send a message without violating rate limits"""
@@ -531,30 +768,51 @@ class UserBot:
                 
                 for chat in new_chats:
                     try:
+                        # First, analyze chat content using AI before joining
+                        chat_analysis = await self._analyze_chat_content(chat)
+
+                        if not chat_analysis["should_join"]:
+                            log.info(f"Skipping chat {chat.title}: {chat_analysis['reason']}")
+                            continue
+
                         # Join chat
                         await self.client(JoinChannelRequest(chat.id))
-                        
-                        # Analyze rules
-                        # Get pinned message using search for pinned messages
-                        async for message in self.client.iter_messages(chat.id, limit=1):
-                            if message.pinned:
-                                pinned = [message]
+
+                        # Get recent messages for deeper analysis
+                        recent_messages = []
+                        async for message in self.client.iter_messages(chat.id, limit=20):
+                            if message.text:
+                                recent_messages.append(message.text)
+                            if len(recent_messages) >= 20:
                                 break
-                        else:
-                            pinned = []
-                        rules = self.rules_analyzer.analyze_chat_rules(chat, pinned)
-                        self.chat_rules_cache[chat.id] = rules
-                        
-                        # Add to database
+
+                        # Analyze chat content and rules
+                        chat_content_analysis = await self._analyze_chat_content_deep(chat, recent_messages)
+                        rules = self.rules_analyzer.analyze_chat_rules(chat, [])
+
+                        # Update analysis with content analysis
+                        chat_analysis.update(chat_content_analysis)
+                        chat_analysis["rules"] = rules
+
+                        # Final decision based on content analysis
+                        if not chat_analysis["should_stay"]:
+                            log.info(f"Leaving chat {chat.title} after content analysis: {chat_analysis['reason']}")
+                            await self.client.delete_dialog(chat.id)
+                            continue
+
+                        # Add to database with AI analysis
                         await self.db.add_chat(
                             chat_id=chat.id,
-                            title=chat.title,
-                            category=self._get_chat_category(chat.title),
-                            rules=rules
+                            title=getattr(chat, 'title', None),
+                            username=getattr(chat, 'username', None),
+                            members_count=getattr(chat, 'participants_count', 0),
+                            ai_analysis=chat_analysis
                         )
-                        
+
                         self.active_chats.add(chat.id)
-                        log.info(f"Joined new chat: {chat.title} (ID: {chat.id})")
+                        self.chat_rules_cache[chat.id] = rules
+                        log.info(f"Joined chat: {chat.title} (ID: {chat.id}) - AI Score: {chat_analysis['relevance_score']:.2f}")
+
                     except (ChatAdminRequired, UserBannedInChannel) as e:
                         log.warning(f"Could not join chat {chat.id}: {e}")
                     except Exception as e:

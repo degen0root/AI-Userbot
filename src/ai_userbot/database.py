@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
@@ -28,6 +29,7 @@ class ChatRecord(Base):
     last_activity = Column(DateTime, default=datetime.utcnow)
     total_messages_sent = Column(Integer, default=0)
     total_promotions_sent = Column(Integer, default=0)
+    ai_analysis = Column(Text)  # JSON field for AI analysis results
 
 
 class MessageRecord(Base):
@@ -98,8 +100,9 @@ class ChatDatabase:
         """Close database connections"""
         await self.engine.dispose()
     
-    async def add_chat(self, chat_id: int, title: Optional[str] = None, 
-                      username: Optional[str] = None, members_count: int = 0) -> ChatInfo:
+    async def add_chat(self, chat_id: int, title: Optional[str] = None,
+                      username: Optional[str] = None, members_count: int = 0,
+                      ai_analysis: Optional[dict] = None) -> ChatInfo:
         """Add or update a chat in the database"""
         async with self.async_session() as session:
             # Check if chat exists
@@ -115,13 +118,16 @@ class ChatDatabase:
                 chat.members_count = members_count or chat.members_count
                 chat.last_activity = datetime.utcnow()
                 chat.is_active = True
+                if ai_analysis:
+                    chat.ai_analysis = json.dumps(ai_analysis)
             else:
                 # Create new
                 chat = ChatRecord(
                     chat_id=chat_id,
                     title=title,
                     username=username,
-                    members_count=members_count
+                    members_count=members_count,
+                    ai_analysis=json.dumps(ai_analysis) if ai_analysis else None
                 )
                 session.add(chat)
             
