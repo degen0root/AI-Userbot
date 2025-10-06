@@ -7,6 +7,8 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import pytz
+import qrcode
+import io
 
 from telethon import TelegramClient, events, types, errors
 from telethon.tl.functions.channels import JoinChannelRequest
@@ -619,8 +621,41 @@ class UserBot:
     
     async def start(self):
         """Start the userbot"""
-        # Connect to Telegram with existing session
+        # Connect to Telegram
         await self.client.connect()
+
+        if not await self.client.is_user_authorized():
+            log.warning("Client not authorized. Starting QR login flow.")
+            try:
+                qr_login = await self.client.qr_login()
+                log.info("Scan the QR code below with your Telegram app (Settings > Devices > Link Desktop Device).")
+
+                qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L)
+                qr.add_data(qr_login.url)
+
+                f = io.StringIO()
+                qr.print_ascii(out=f, invert=True)
+                f.seek(0)
+                qr_code_ascii = f.read()
+                
+                # Log the QR code so it's visible in docker logs
+                log.info("\n" + qr_code_ascii)
+
+                log.info(f"Waiting for QR code scan... The code will expire in 2 minutes.")
+                
+                user = await qr_login.wait(timeout=120)
+                log.info(f"Successfully logged in as {user.first_name} {getattr(user, 'last_name', '')}")
+
+            except asyncio.TimeoutError:
+                log.error("QR code scan timed out. Please restart the bot to try again.")
+                await self.stop()
+                return
+            except Exception as e:
+                log.error(f"QR login failed: {e}")
+                log.error("Please restart the bot and try again.")
+                await self.stop()
+                return
+
         log.info("UserBot started successfully")
 
         # Load previously active chats from database
