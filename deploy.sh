@@ -224,7 +224,7 @@ update_bot() {
     read -p "Continue? (y/N) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        ssh "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker compose -f docker-compose.ai-userbot.yml build --no-cache && docker compose -f docker-compose.ai-userbot.yml up -d"
+        ssh "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker compose -f docker-compose.ai-userbot.yml down || true && docker compose -f docker-compose.ai-userbot.yml build --no-cache && docker compose -f docker-compose.ai-userbot.yml up -d"
         echo -e "${GREEN}Updated!${NC}"
     fi
 }
