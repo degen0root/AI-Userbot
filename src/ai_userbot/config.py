@@ -95,6 +95,7 @@ class PolicySection(BaseModel):
 
     # Chat discovery settings
     chat_discovery_interval: int = 3600  # 1 hour between discovery cycles
+    max_new_chats_per_cycle: int = 5  # Maximum new chats to join per cycle
 
 
 class LLMSection(BaseModel):

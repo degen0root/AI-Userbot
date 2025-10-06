@@ -370,7 +370,7 @@ class UserBot:
         for keyword in self.config.telegram.search_keywords:
             try:
                 # Search for public chats
-                result = await self.client(functions.contacts.Search(q=keyword, limit=10))
+                result = await self.client(contacts.Search(q=keyword, limit=10))
                 
                 for chat in result.chats:
                     if chat.is_group and not chat.is_private and chat.is_joinable:
