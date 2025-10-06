@@ -101,22 +101,19 @@ deploy_bot() {
     echo -e "${BLUE}Switching to remote Docker context...${NC}"
     docker context use "$DOCKER_CONTEXT"
 
-    # Prepare remote directory
-    echo -e "${BLUE}Preparing remote directory...${NC}"
-    ssh "$REMOTE_HOST" "mkdir -p $REMOTE_DIR/{data,logs,configs,sessions}"
-
-    # Copy necessary files
-    echo -e "${BLUE}Copying files to remote server...${NC}"
-    rsync -avz --exclude='.git' \
-        --exclude='*.session*' \
-        --exclude='data/' \
-        --exclude='logs/' \
-        --exclude='__pycache__/' \
-        --exclude='*.pyc' \
-        --exclude='.env' \
-        --exclude='venv/' \
-        --exclude='.venv/' \
-        ./ "$REMOTE_HOST:$REMOTE_DIR/"
+    # Prepare remote directory using Git
+    echo -e "${BLUE}Cloning/updating remote repository...${NC}"
+    ssh "$REMOTE_HOST" "
+        if [ -d '$REMOTE_DIR/.git' ]; then
+            echo 'Repository exists, pulling latest changes...';
+            cd '$REMOTE_DIR';
+            git pull origin main;
+        else
+            echo 'Cloning new repository...';
+            git clone https://github.com/degen0root/AI-Userbot.git '$REMOTE_DIR';
+        fi
+        mkdir -p $REMOTE_DIR/{data,logs,configs,sessions}
+    "
 
     # Check if .env exists on remote
     echo -e "${YELLOW}Checking .env file on remote...${NC}"
@@ -220,11 +217,11 @@ restart_bot() {
 # Function to update from GitHub
 update_bot() {
     echo -e "${YELLOW}⬆️  Updating from GitHub...${NC}"
-    echo "This will rebuild the container from latest code"
+    echo "This will pull the latest code, stop the bot, rebuild the container, and restart it."
     read -p "Continue? (y/N) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        ssh "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker compose -f docker-compose.ai-userbot.yml down || true && docker compose -f docker-compose.ai-userbot.yml build --no-cache && docker compose -f docker-compose.ai-userbot.yml up -d"
+        ssh "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && git pull origin main && docker compose -f docker-compose.ai-userbot.yml down && docker compose -f docker-compose.ai-userbot.yml build --no-cache && docker compose -f docker-compose.ai-userbot.yml up -d"
         echo -e "${GREEN}Updated!${NC}"
     fi
 }
