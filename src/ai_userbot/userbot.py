@@ -1373,7 +1373,7 @@ class UserBot:
             
             await asyncio.sleep(random.uniform(5, 15))  # Anti-flood delay
         
-        return new_chats[:self.config.telegram.max_new_chats_per_cycle]
+        return new_chats[:self.config.policy.max_new_chats_per_cycle]
 
     async def _cleanup_old_messages(self):
         """Periodic cleanup of old message history"""
