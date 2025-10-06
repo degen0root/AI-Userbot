@@ -49,8 +49,12 @@ class TelegramSection(BaseModel):
     auto_join_predefined_chats: bool = True  # Auto-join predefined chats on startup
 
     # Personal messages settings
-    respond_to_personal_messages: bool = False  # Whether to respond to personal messages
+    respond_to_personal_messages: bool = True  # Whether to respond to personal messages
     max_personal_replies_per_hour: int = 10  # Max replies to personal messages per hour
+
+    # Daily activity settings
+    daily_message_target: int = 200  # Целевое количество сообщений в день
+    max_chats_per_day: int = 50  # Максимум чатов для активности в день
 
     # Old bot settings (kept for compatibility)
     allowed_chat_ids: List[int] = Field(default_factory=list)

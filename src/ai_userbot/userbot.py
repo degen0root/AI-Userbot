@@ -58,7 +58,7 @@ class UserBot:
         async def on_message(event: events.NewMessage.Event):
             if event.is_group:
                 await self._handle_group_message(event)
-            elif self.config.policy.respond_to_personal_messages and not event.is_group:
+            elif self.config.telegram.respond_to_personal_messages and not event.is_group:
                 await self._handle_personal_message(event)
 
         # Handle replies and mentions in groups
@@ -79,7 +79,7 @@ class UserBot:
 
     async def _handle_personal_message(self, event: events.NewMessage.Event):
         """Handle personal messages (DMs)"""
-        if not self.config.policy.respond_to_personal_messages:
+        if not self.config.telegram.respond_to_personal_messages:
             return
 
         message = event.message
@@ -87,6 +87,7 @@ class UserBot:
 
         # Check hourly limit for personal messages
         if not await self._check_personal_hourly_limit(sender.id if sender else 0):
+            log.debug(f"Personal message limit reached for user {sender.id if sender else 0}")
             return
 
         # Store message context and update persona experience
@@ -349,6 +350,52 @@ class UserBot:
 
         log.info(f"Successfully joined {joined_count} out of {len(chat_list)} chats")
 
+    async def _find_and_join_test_chats(self):
+        """Try to find and join some test chats if no active chats available"""
+        try:
+            # Try to find some public chats that might be suitable
+            test_keywords = ["test", "testing", "demo", "пример", "тест"]
+
+            for keyword in test_keywords[:3]:  # Limit to 3 attempts
+                try:
+                    dialogs = await self.client.get_dialogs(limit=20)
+
+                    for dialog in dialogs:
+                        if (dialog.is_group and not dialog.is_channel and
+                            self._is_suitable_chat(dialog.entity) and
+                            dialog.entity.id not in self.active_chats):
+
+                            # Try to join
+                            try:
+                                await self.client(JoinChannelRequest(dialog.entity.id))
+
+                                # Quick analysis
+                                recent_messages = []
+                                async for message in self.client.iter_messages(dialog.entity.id, limit=5):
+                                    if message.text:
+                                        recent_messages.append(message.text)
+
+                                if recent_messages:  # Has some activity
+                                    await self.db.add_chat(
+                                        chat_id=dialog.entity.id,
+                                        title=getattr(dialog.entity, 'title', 'Unknown'),
+                                        username=getattr(dialog.entity, 'username', None),
+                                        members_count=getattr(dialog.entity, 'participants_count', 0)
+                                    )
+
+                                    self.active_chats.add(dialog.entity.id)
+                                    log.info(f"Joined test chat: {getattr(dialog.entity, 'title', 'Unknown')}")
+                                    return  # Found and joined one
+
+                            except Exception as e:
+                                log.debug(f"Could not join test chat {dialog.entity.id}: {e}")
+
+                except Exception as e:
+                    log.debug(f"Error searching for test chats with keyword '{keyword}': {e}")
+
+        except Exception as e:
+            log.error(f"Error in find and join test chats: {e}")
+
     async def _join_predefined_chats(self):
         """Auto-join predefined chats on startup"""
         try:
@@ -383,7 +430,7 @@ class UserBot:
         # Get messages sent to this user in the last hour
         recent_messages = await self.db.get_personal_messages_since(user_id, hour_start)
 
-        return len(recent_messages) < self.config.policy.max_personal_replies_per_hour
+        return len(recent_messages) < self.config.telegram.max_personal_replies_per_hour
 
     async def _generate_personal_response(self, message) -> Optional[str]:
         """Generate response to personal message"""
@@ -1178,7 +1225,7 @@ class UserBot:
                 active_chats_today = len(daily_stats.get('active_chats', set()))
 
                 # If we haven't reached daily target, be more active
-                if messages_sent_today < self.config.policy.daily_message_target:
+                if messages_sent_today < self.config.telegram.daily_message_target:
                     # Distribute activity across available chats
                     available_chats = list(self.active_chats)
                     if available_chats:
@@ -1186,8 +1233,8 @@ class UserBot:
                         random.shuffle(available_chats)
 
                         # Calculate how many messages we need to send
-                        remaining_messages = self.config.policy.daily_message_target - messages_sent_today
-                        chats_to_use = min(len(available_chats), self.config.policy.max_chats_per_day)
+                        remaining_messages = self.config.telegram.daily_message_target - messages_sent_today
+                        chats_to_use = min(len(available_chats), self.config.telegram.max_chats_per_day)
 
                         messages_per_chat = max(1, remaining_messages // chats_to_use)
 
@@ -1198,9 +1245,13 @@ class UserBot:
                                 await asyncio.sleep(random.uniform(60, 300))  # 1-5 minutes
                             except Exception as e:
                                 log.error(f"Error sending scheduled message to {chat_id}: {e}")
+                    else:
+                        log.info(f"No active chats available. Messages sent today: {messages_sent_today}/{self.config.telegram.daily_message_target}")
+                        # If no active chats, try to find and join some
+                        await self._find_and_join_test_chats()
 
                 # Sleep until next activity check (use configured interval)
-                sleep_time = self.config.policy.chat_discovery_interval + random.uniform(-300, 300)  # ±5 minutes jitter
+                sleep_time = self.config.telegram.chat_discovery_interval + random.uniform(-300, 300)  # ±5 minutes jitter
                 await asyncio.sleep(max(600, sleep_time))  # Minimum 10 minutes
 
             except Exception as e:
