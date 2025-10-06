@@ -624,27 +624,30 @@ class UserBot:
         # Connect to Telegram
         await self.client.connect()
 
-        if not await self.client.is_user_authorized():
-            log.warning("Client not authorized. Starting QR login flow.")
+        # Check if already authorized (existing session works)
+        if await self.client.is_user_authorized():
+            log.info("Using existing session - bot is already authorized")
+        else:
+            log.warning("Session not authorized or corrupted. Starting QR login flow.")
             try:
                 qr_login = await self.client.qr_login()
-                
+
                 qr = qrcode.QRCode(
                     error_correction=qrcode.constants.ERROR_CORRECT_M,
                     box_size=2,
                     border=4,
                 )
                 qr.add_data(qr_login.url)
-                
+
                 f = io.StringIO()
                 qr.print_ascii(out=f)
                 f.seek(0)
                 qr_code_ascii = f.read()
-                
+
                 log.info("Scan the QR code below with your Telegram app (Settings > Devices > Link Desktop Device).")
                 log.info("\n\n" + "="*50 + "\n" + qr_code_ascii + "\n" + "="*50 + "\n\n")
                 log.info(f"Waiting for QR code scan... The code will expire in 2 minutes.")
-                
+
                 user = await qr_login.wait(timeout=120)
                 log.info(f"Successfully logged in as {user.first_name} {getattr(user, 'last_name', '')}")
 
