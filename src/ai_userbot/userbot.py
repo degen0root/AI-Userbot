@@ -1397,7 +1397,7 @@ class UserBot:
                 active_chats_today = len(daily_stats.get('active_chats', set()))
 
                 # If we haven't reached daily target, be more active
-                if messages_sent_today < self.config.telegram.daily_message_target:
+                if messages_sent_today < self.config.policy.daily_message_target:
                     # Distribute activity across available chats
                     available_chats = list(self.active_chats)
                     if available_chats:
@@ -1405,8 +1405,8 @@ class UserBot:
                         random.shuffle(available_chats)
 
                         # Calculate how many messages we need to send
-                        remaining_messages = self.config.telegram.daily_message_target - messages_sent_today
-                        chats_to_use = min(len(available_chats), self.config.telegram.max_chats_per_day)
+                        remaining_messages = self.config.policy.daily_message_target - messages_sent_today
+                        chats_to_use = min(len(available_chats), self.config.policy.max_chats_per_day)
 
                         messages_per_chat = max(1, remaining_messages // chats_to_use)
 
@@ -1418,7 +1418,7 @@ class UserBot:
                             except Exception as e:
                                 log.error(f"Error sending scheduled message to {chat_id}: {e}")
                     else:
-                        log.info(f"No active chats available. Messages sent today: {messages_sent_today}/{self.config.telegram.daily_message_target}")
+                        log.info(f"No active chats available. Messages sent today: {messages_sent_today}/{self.config.policy.daily_message_target}")
                         # If no active chats, try to find and join some
                         await self._find_and_join_test_chats()
 
