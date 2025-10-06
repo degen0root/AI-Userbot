@@ -81,11 +81,11 @@ else
     echo -e "${YELLOW}No session found:${NC} $REMOTE_SESSION_FILE"
     read -p "Run interactive login now (y/N)? " -n 1 -r; echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "${GREEN}Starting interactive login on remote...${NC}"
-        # Build image to ensure scripts/create_session.py is present in the container
+        echo -e "${GREEN}Starting interactive QR login on remote...${NC}"
+        # Build image to ensure scripts/create_session_qr_telethon.py is present in the container
         ssh -t "$REMOTE_HOST" "cd $REMOTE_DIR && docker-compose -f docker-compose.persona.yml build ai-userbot"
-        # Run interactive login bypassing entrypoint so app won't start
-        ssh -t "$REMOTE_HOST" "cd $REMOTE_DIR && docker-compose -f docker-compose.persona.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session.py"
+        # Run QR login bypassing entrypoint so app won't start
+        ssh -t "$REMOTE_HOST" "cd $REMOTE_DIR && docker-compose -f docker-compose.persona.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr_telethon.py"
     else
         echo -e "${YELLOW}Skipping interactive login. You can run it later manually.${NC}"
     fi

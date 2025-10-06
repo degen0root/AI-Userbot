@@ -95,8 +95,8 @@ class PolicySection(BaseModel):
 
 
 class LLMSection(BaseModel):
-    provider: str = Field(default="stub")
-    model: str = Field(default="gpt-4o-mini")
+    provider: str = Field(default="google")  # Default to Google for better performance
+    model: str = Field(default="gemini-pro")
     temperature: float = 0.7
     max_tokens: int = 256
     # Loaded from env if needed
@@ -142,13 +142,21 @@ def load_config(path: Optional[str | os.PathLike[str]] = None) -> AppConfig:
     cfg.telegram.api_hash = os.getenv("TELEGRAM_API_HASH", cfg.telegram.api_hash)
     cfg.telegram.phone_number = os.getenv("TELEGRAM_PHONE_NUMBER", cfg.telegram.phone_number)
     
-    # LLM env (if used later)
-    api_key = os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("OPENAI_BASE_URL")
-    if api_key:
-        cfg.llm.api_key = api_key
-    if base_url:
-        cfg.llm.base_url = base_url
+    # LLM env (Google is default, but fallback to OpenAI if needed)
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    openai_base_url = os.getenv("OPENAI_BASE_URL")
+
+    if google_api_key:
+        cfg.llm.api_key = google_api_key
+        cfg.llm.provider = "google"
+        cfg.llm.model = "gemini-pro"
+    elif openai_api_key:
+        cfg.llm.api_key = openai_api_key
+        cfg.llm.provider = "openai"
+        cfg.llm.model = "gpt-4o-mini"
+        if openai_base_url:
+            cfg.llm.base_url = openai_base_url
     
     # Promoted bot info from env
     promoted_username = os.getenv("PROMOTED_BOT_USERNAME", cfg.promoted_bot.username)

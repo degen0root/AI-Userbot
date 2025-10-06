@@ -99,7 +99,13 @@ if ! docker run --rm -v userbot_config:/config alpine test -f /config/config.yam
       -v ~/AI-Userbot/configs/config.example.yaml:/source/config.yaml:ro \
       -v userbot_config:/config alpine cp /source/config.yaml /config/config.yaml
   else
-    cat > /tmp/config.yaml << 'CONFIG'
+    # Check if GOOGLE_API_KEY is set in env and use Google as default LLM
+    LLM_PROVIDER="stub"
+    if [ -n "${GOOGLE_API_KEY:-}" ]; then
+      LLM_PROVIDER="google"
+    fi
+
+    cat > /tmp/config.yaml << CONFIG
 app:
   name: "AI-UserBot"
   logging_level: "INFO"
@@ -115,8 +121,8 @@ policy:
   typing_speed_wpm: 40
   timezone: "Europe/Moscow"
 llm:
-  provider: "stub"
-  model: "gpt-4o-mini"
+  provider: "$LLM_PROVIDER"
+  model: "gemini-pro"
   temperature: 0.7
   max_tokens: 150
 CONFIG
@@ -157,10 +163,10 @@ read -p "Run interactive login now (y/N)? " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
   echo -e "${GREEN}Starting interactive login on remote...${NC}"
-  # Build image to ensure /app/scripts/create_session.py exists
+  # Build image to ensure /app/scripts/create_session_qr_telethon.py exists
   ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml build --no-cache ai-userbot"
-  # Use --entrypoint '' to bypass image entrypoint; then run the script inside
-  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session.py"
+  # Use --entrypoint '' to bypass image entrypoint; then run the QR script inside
+  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr_telethon.py"
 fi
 
 # Offer installing session from a local file (bypass FloodWait)
@@ -178,7 +184,7 @@ echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
   echo -e "${GREEN}Starting QR login on remote...${NC}"
   ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml build --no-cache ai-userbot"
-  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr.py"
+  ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f docker-compose.ai-userbot.yml run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr_telethon.py"
 fi
 
 echo -e "${GREEN}Deploying container...${NC}"

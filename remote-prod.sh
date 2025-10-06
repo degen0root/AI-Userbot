@@ -133,11 +133,11 @@ EOF
         13)
             echo -e "${GREEN}Interactive QR login...${NC}"
             remote_cmd "docker compose -f $COMPOSE_FILE build --no-cache ai-userbot"
-            ssh -t "$REMOTE_HOST" "docker compose -f $COMPOSE_FILE run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr.py"
+            ssh -t "$REMOTE_HOST" "docker compose -f $COMPOSE_FILE run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr_telethon.py"
             ;;
         13)
             echo -e "${GREEN}Interactive Telegram login...${NC}"
-            ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f $COMPOSE_FILE run --rm -it ai-userbot python scripts/create_session.py"
+            ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; docker compose --env-file ~/.ai-userbot.env -f $COMPOSE_FILE run --rm --entrypoint '' -it ai-userbot python /app/scripts/create_session_qr_telethon.py"
             ;;
         0)
             echo -e "${GREEN}Goodbye!${NC}"
