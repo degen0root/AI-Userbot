@@ -1280,8 +1280,13 @@ class UserBot:
                 log.error(f"Chat discovery error: {e}")
             
             # Sleep with jitter
-            sleep_time = self.config.telegram.chat_discovery_interval + random.uniform(-300, 300)
-            await asyncio.sleep(sleep_time)
+            try:
+                sleep_time = self.config.policy.chat_discovery_interval + random.uniform(-300, 300)
+                await asyncio.sleep(sleep_time)
+            except AttributeError:
+                # Fallback if config.policy.chat_discovery_interval is not found
+                sleep_time = 300 + random.uniform(-150, 150) # Default to 300 seconds with jitter
+                await asyncio.sleep(sleep_time)
 
     async def _find_new_chats(self):
         """Find new open chats based on keywords"""
@@ -1423,8 +1428,13 @@ class UserBot:
                         await self._find_and_join_test_chats()
 
                 # Sleep until next activity check (use configured interval)
-                sleep_time = self.config.telegram.chat_discovery_interval + random.uniform(-300, 300)  # ±5 minutes jitter
-                await asyncio.sleep(max(600, sleep_time))  # Minimum 10 minutes
+                try:
+                    sleep_time = self.config.policy.chat_discovery_interval + random.uniform(-300, 300)  # ±5 minutes jitter
+                    await asyncio.sleep(max(600, sleep_time))  # Minimum 10 minutes
+                except AttributeError:
+                    # Fallback if config.policy.chat_discovery_interval is not found
+                    sleep_time = 600 + random.uniform(-300, 300) # Default to 600 seconds with jitter
+                    await asyncio.sleep(sleep_time)
 
             except Exception as e:
                 log.error(f"Error in activity scheduler: {e}")
