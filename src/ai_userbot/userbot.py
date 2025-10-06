@@ -628,10 +628,22 @@ class UserBot:
             log.warning("Client not authorized. Starting QR login flow.")
             try:
                 qr_login = await self.client.qr_login()
-                log.info("Please open the following URL in your browser to log in via QR code:")
-                log.info(f"URL: {qr_login.url}")
-
-                log.info(f"Waiting for you to log in... The link will expire in 2 minutes.")
+                
+                qr = qrcode.QRCode(
+                    error_correction=qrcode.constants.ERROR_CORRECT_L,
+                    box_size=1,
+                    border=4,
+                )
+                qr.add_data(qr_login.url)
+                
+                f = io.StringIO()
+                qr.print_ascii(out=f)
+                f.seek(0)
+                qr_code_ascii = f.read()
+                
+                log.info("Scan the QR code below with your Telegram app (Settings > Devices > Link Desktop Device).")
+                log.info("\n\n" + "="*50 + "\n" + qr_code_ascii + "\n" + "="*50 + "\n\n")
+                log.info(f"Waiting for QR code scan... The code will expire in 2 minutes.")
                 
                 user = await qr_login.wait(timeout=120)
                 log.info(f"Successfully logged in as {user.first_name} {getattr(user, 'last_name', '')}")
