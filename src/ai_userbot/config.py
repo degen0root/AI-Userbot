@@ -93,6 +93,9 @@ class PolicySection(BaseModel):
     weekend_activity_multiplier: float = 0.7
     night_messages_probability: float = 0.05
 
+    # Chat discovery settings
+    chat_discovery_interval: int = 3600  # 1 hour between discovery cycles
+
 
 class LLMSection(BaseModel):
     provider: str = Field(default="google")  # Default to Google for better performance
