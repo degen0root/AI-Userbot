@@ -509,24 +509,24 @@ class UserBot:
                 # Try to get chat entity
                 try:
                     chat = await self.get_entity_cached(parsed_identifier)
-        except errors.FloodWaitError as e:
-            log.warning(f"FloodWait for {e.seconds} seconds on get_entity")
-            await asyncio.sleep(e.seconds)
-            # Retry after waiting
-            try:
-                chat = await self.get_entity_cached(parsed_identifier)
-            except Exception as retry_e:
-                log.warning(f"Could not find chat {chat_identifier} even after waiting: {retry_e}")
-                continue
-        except Exception as e:
-            log.warning(f"Could not find chat {chat_identifier}: {e}")
-            # Skip chats that don't exist or have invalid usernames
-            if "No user has" in str(e) or "not supported between instances" in str(e):
-                log.info(f"Skipping chat {chat_identifier} - invalid username or entity")
-                continue
-            else:
-                # Re-raise other exceptions
-                raise
+                except errors.FloodWaitError as e:
+                    log.warning(f"FloodWait for {e.seconds} seconds on get_entity")
+                    await asyncio.sleep(e.seconds)
+                    # Retry after waiting
+                    try:
+                        chat = await self.get_entity_cached(parsed_identifier)
+                    except Exception as retry_e:
+                        log.warning(f"Could not find chat {chat_identifier} even after waiting: {retry_e}")
+                        continue
+                except Exception as e:
+                    log.warning(f"Could not find chat {chat_identifier}: {e}")
+                    # Skip chats that don't exist or have invalid usernames
+                    if "No user has" in str(e) or "not supported between instances" in str(e):
+                        log.info(f"Skipping chat {chat_identifier} - invalid username or entity")
+                        continue
+                    else:
+                        # Re-raise other exceptions
+                        raise
 
                 # Skip if already joined this chat
                 if chat and chat.id in self.active_chats:
@@ -550,8 +550,6 @@ class UserBot:
                         await self.client(JoinChannelRequest(chat.id))
                         log.info(f"Successfully joined chat after waiting: {getattr(chat, 'title', 'Unknown')}")
                         joined_count += 1
-                        # Continue to analyze the chat
-                        continue
                     except Exception as retry_e:
                         log.error(f"Failed to join chat {chat_identifier} even after waiting: {retry_e}")
                         continue
