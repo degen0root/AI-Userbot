@@ -23,16 +23,25 @@ class LLMRequest:
 
 class LLMClient:
     """Base class for LLM clients"""
-    
+
     def generate(self, req: LLMRequest) -> str:
         """Synchronous generation"""
         raise NotImplementedError
-    
+
     async def generate_async(self, req: LLMRequest) -> str:
         """Asynchronous generation"""
         # Default implementation runs sync version in thread pool
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.generate, req)
+
+    async def generate_response(self, system_prompt: str = None, user_message: str = None, chat_context: Dict = None) -> str:
+        """Unified interface for generating responses"""
+        req = LLMRequest(
+            prompt=user_message or "",
+            system_prompt=system_prompt,
+            chat_context=str(chat_context) if chat_context else None
+        )
+        return await self.generate_async(req)
 
 
 class StubLLM(LLMClient):

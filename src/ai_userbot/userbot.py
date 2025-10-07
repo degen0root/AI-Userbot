@@ -475,13 +475,19 @@ class UserBot:
         joined_count = 0
         log.info(f"Attempting to join {len(chat_list)} chats...")
 
-        for chat_identifier in chat_list:
+        for i, chat_identifier in enumerate(chat_list):
             try:
                 # Parse chat identifier (username, URL, or numeric ID)
                 parsed_identifier = self._parse_chat_identifier(chat_identifier)
                 if not parsed_identifier:
                     log.warning(f"Could not parse chat identifier: {chat_identifier}")
                     continue
+
+                # Add delay between join attempts to avoid flood wait
+                if i > 0:
+                    delay = random.uniform(2, 5)  # Random delay 2-5 seconds
+                    log.debug(f"Waiting {delay:.1f}s before next join attempt")
+                    await asyncio.sleep(delay)
 
                 log.info(f"Attempting to join chat: {parsed_identifier}")
                 
@@ -586,7 +592,7 @@ class UserBot:
                 return
 
             log.info(f"Starting to join {len(self.config.telegram.predefined_chats)} predefined chats...")
-            await asyncio.sleep(10)  # Wait for bot to fully start
+            await asyncio.sleep(30)  # Wait for bot to fully start and API to settle
             log.info(f"Joining predefined chats: {self.config.telegram.predefined_chats}")
             await self.join_chats_by_list(self.config.telegram.predefined_chats)
             log.info("Finished joining predefined chats")
