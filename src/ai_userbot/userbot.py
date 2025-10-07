@@ -528,19 +528,16 @@ class UserBot:
                         # Re-raise other exceptions
                         raise
 
-                # Skip if already joined this chat or has pending/rejected status
+                # Skip if already joined this chat
                 if chat and chat.id in self.active_chats:
                     log.info(f"Already joined chat {chat_identifier} - skipping")
                     continue
 
-                # Check if chat has pending or rejected join status
-                try:
-                    existing_chat = await self.db.get_chat(chat.id)
-                    if existing_chat and existing_chat.join_status in ['pending', 'rejected']:
-                        log.info(f"Chat {chat_identifier} has status {existing_chat.join_status} - skipping")
-                        continue
-                except Exception as db_e:
-                    log.warning(f"Could not check chat status for {chat_id}: {db_e}")
+                # Sync chat status with Telegram API and database
+                already_in_chat = await self._sync_chat_status_with_telegram(chat)
+                if already_in_chat:
+                    log.info(f"Already in chat {chat_identifier} according to Telegram API - skipping join attempt")
+                    continue
 
                 # Note: We skip pre-join criteria check as requested - analyze only after joining
 
@@ -889,6 +886,9 @@ class UserBot:
         active_chats = await self.db.get_active_chats()
         self.active_chats = {chat.chat_id for chat in active_chats}
 
+        # Sync active chats status with Telegram API
+        await self._sync_all_active_chats_with_telegram()
+
         # Start background tasks
         asyncio.create_task(self._chat_discovery_loop())
         asyncio.create_task(self._cleanup_old_messages())
@@ -957,6 +957,77 @@ class UserBot:
             except:
                 pass
             return False
+
+    async def _sync_all_active_chats_with_telegram(self):
+        """Sync all active chats status with Telegram API dialogs"""
+        try:
+            log.info("Syncing active chats status with Telegram API...")
+            # Get current dialogs from Telegram API
+            dialogs = await self.client.get_dialogs(limit=1000)
+
+            # Create set of chat IDs from Telegram dialogs
+            telegram_chat_ids = {dialog.entity.id for dialog in dialogs}
+
+            # Get all chats from database that we think are active
+            db_active_chats = await self.db.get_active_chats()
+
+            for db_chat in db_active_chats:
+                chat_id = db_chat.chat_id
+
+                if chat_id in telegram_chat_ids:
+                    # Chat is in both database and Telegram dialogs - we're really joined
+                    if db_chat.join_status != 'joined':
+                        await self.db.add_chat(chat_id=chat_id, join_status='joined')
+                        log.debug(f"Updated chat {chat_id} status to 'joined' - confirmed in Telegram")
+                else:
+                    # Chat is in database but not in Telegram dialogs - we left or were removed
+                    if db_chat.join_status == 'joined':
+                        await self.db.add_chat(chat_id=chat_id, join_status='rejected')
+                        log.debug(f"Updated chat {chat_id} status to 'rejected' - not in Telegram dialogs")
+                        # Remove from active chats
+                        self.active_chats.discard(chat_id)
+
+            log.info(f"Synced {len(db_active_chats)} active chats with Telegram API")
+
+        except Exception as e:
+            log.error(f"Could not sync active chats with Telegram API: {e}")
+
+    async def _sync_chat_status_with_telegram(self, chat):
+        """Sync chat status with Telegram API dialogs"""
+        try:
+            # Get current dialogs from Telegram API (cached if possible)
+            dialogs = await self.client.get_dialogs(limit=1000)  # Get all dialogs
+
+            # Check if this chat is in our active dialogs
+            chat_in_dialogs = any(dialog.entity.id == chat.id for dialog in dialogs)
+
+            # Get current status from database
+            existing_chat = await self.db.get_chat(chat.id)
+
+            if chat_in_dialogs:
+                # Chat is in our dialogs - we're joined
+                if existing_chat and existing_chat.join_status != 'joined':
+                    # Update database to reflect joined status
+                    await self.db.add_chat(
+                        chat_id=chat.id,
+                        join_status='joined'
+                    )
+                    log.debug(f"Updated chat {chat.id} status to 'joined' based on Telegram API")
+                return True  # We're already in this chat
+            else:
+                # Chat is not in our dialogs
+                if existing_chat and existing_chat.join_status == 'joined':
+                    # We think we're joined but Telegram API says we're not
+                    await self.db.add_chat(
+                        chat_id=chat.id,
+                        join_status='rejected'  # Or handle as left chat
+                    )
+                    log.debug(f"Updated chat {chat.id} status to 'rejected' - not in Telegram dialogs")
+                return False  # We're not in this chat
+
+        except Exception as e:
+            log.warning(f"Could not sync chat status for {chat.id}: {e}")
+            return False  # Assume not in chat if we can't check
 
     async def _handle_new_chat_joined(self, chat_id):
         """Handle when bot is added to a new chat (after admin approval)"""
