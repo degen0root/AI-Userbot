@@ -306,7 +306,6 @@ class UserBot:
             log.debug(f"Simulating {delay:.1f}s delay before responding to personal message")
             await asyncio.sleep(delay)
 
-            # Generate response
             # Determine relationship stage
             interaction_count = await self.db.get_personal_interaction_count(sender_id)
             if interaction_count <= 2:
@@ -315,14 +314,17 @@ class UserBot:
                 relationship_stage = "acquaintance"
             else:
                 relationship_stage = "friend"
-            
+
             log.info(f"Interaction count with {sender_id}: {interaction_count}. Relationship stage: {relationship_stage}")
 
-            # Get tailored system prompt
-            system_prompt = self.persona.get_system_prompt_for_personal_chat(relationship_stage)
-
-            # Generate response
-            response = await self._generate_personal_response(message, system_prompt)
+            # For complete strangers (interaction_count == 0), use extra cautious approach
+            if interaction_count == 0:
+                response = await self._generate_cautious_first_response(sender, message)
+            else:
+                # Get tailored system prompt for established contacts
+                system_prompt = self.persona.get_system_prompt_for_personal_chat(relationship_stage)
+                # Generate response
+                response = await self._generate_personal_response(message, system_prompt)
 
             if response:
                 try:
@@ -812,6 +814,60 @@ class UserBot:
         except Exception as e:
             log.error(f"Error generating personal response: {e}")
             return None
+
+    async def _generate_cautious_first_response(self, sender, message):
+        """Generate a cautious response for first contact with a stranger"""
+        try:
+            # Use formal greeting for first contact
+            greeting = self.persona.get_formal_greeting()
+
+            # Check if this is likely a stranger (very first message)
+            interaction_count = await self.db.get_personal_interaction_count(sender.id) if sender else 0
+
+            if interaction_count == 0:  # Completely new contact
+                # Be very cautious with complete strangers
+                response_templates = [
+                    f"{greeting}. Мы знакомы?",
+                    f"{greeting}. Вы мне писали раньше?",
+                    f"{greeting}. Откуда вы меня знаете?",
+                    f"{greeting}. Чем могу помочь?",
+                    f"{greeting}. Какое у вас дело?"
+                ]
+
+                context = f"Неизвестный человек написал: '{message.text or ''}'"
+                response = await self.llm.generate_response(
+                    system_prompt=self.persona.get_system_prompt_for_personal_chat("new_contact"),
+                    user_message=context,
+                    chat_context={"is_personal": True, "is_first_contact": True}
+                )
+
+                if response:
+                    # Make sure response is appropriate for stranger
+                    response = self._make_response_stranger_appropriate(response)
+
+                return response or random.choice(response_templates)
+
+            return None  # Let normal flow handle if not complete stranger
+
+        except Exception as e:
+            log.error(f"Error generating cautious response: {e}")
+            return f"{self.persona.get_formal_greeting()}. Чем могу помочь?"
+
+    def _make_response_stranger_appropriate(self, response):
+        """Make sure response is appropriate for dealing with a stranger"""
+        # Remove overly friendly language
+        response = response.replace("Рада знакомству!", "")
+        response = response.replace("Рада вас видеть!", "")
+        response = response.replace("Приятно познакомиться!", "")
+        response = response.replace("Будем дружить!", "")
+        response = response.replace("Обнимаю", "")
+        response = response.replace("Целую", "")
+
+        # Ensure formal tone
+        if not any(word in response.lower() for word in ["здравствуйте", "привет", "добрый", "спасибо", "пожалуйста"]):
+            response = f"{self.persona.get_formal_greeting()}. {response.strip()}"
+
+        return response.strip()
     
     async def start(self):
         """Start the userbot"""
