@@ -505,10 +505,10 @@ class UserBot:
                     await asyncio.sleep(delay)
 
                 log.info(f"Attempting to join chat: {parsed_identifier}")
-                
-        # Try to get chat entity
-        try:
-            chat = await self.get_entity_cached(parsed_identifier)
+
+                # Try to get chat entity
+                try:
+                    chat = await self.get_entity_cached(parsed_identifier)
         except errors.FloodWaitError as e:
             log.warning(f"FloodWait for {e.seconds} seconds on get_entity")
             await asyncio.sleep(e.seconds)
@@ -575,6 +575,24 @@ class UserBot:
                     if chat is None:
                         log.error(f"Cannot analyze chat {chat_identifier} - entity is None")
                         continue
+
+                    # Check if bot can send messages in this chat
+                    try:
+                        permissions = await self.client.get_permissions(chat.id)
+                        if not permissions.send_messages:
+                            log.info(f"Cannot send messages in chat {chat_identifier} - leaving")
+                            await self.db.add_chat(
+                                chat_id=chat.id,
+                                title=getattr(chat, 'title', 'Unknown'),
+                                username=getattr(chat, 'username', None),
+                                members_count=getattr(chat, 'participants_count', 0),
+                                ai_analysis={"should_stay": False, "reason": "Cannot send messages", "no_send_permission": True}
+                            )
+                            await self.client.delete_dialog(chat.id)
+                            continue
+                    except Exception as perm_e:
+                        log.warning(f"Could not check permissions for chat {chat_identifier}: {perm_e}")
+
                     recent_messages = []
                     async for message in self.client.iter_messages(chat.id, limit=10):
                         if message.text:
@@ -654,6 +672,13 @@ class UserBot:
 
         except Exception as e:
             log.error(f"Error in find and join test chats: {e}")
+
+    async def _join_predefined_chats_async(self):
+        """Wrapper to run chat joining in background"""
+        try:
+            await self._join_predefined_chats()
+        except Exception as e:
+            log.error(f"Error in background chat joining: {e}")
 
     async def _join_predefined_chats(self):
         """Auto-join predefined chats on startup"""
@@ -847,9 +872,10 @@ class UserBot:
         asyncio.create_task(self._cleanup_old_messages())
         asyncio.create_task(self._activity_scheduler())
 
-        # Auto-join predefined chats if enabled
+        # Auto-join predefined chats if enabled (in background)
         if self.config.telegram.auto_join_predefined_chats and self.config.telegram.predefined_chats:
-            asyncio.create_task(self._join_predefined_chats())
+            # Run chat joining in background to not block main functionality
+            asyncio.create_task(self._join_predefined_chats_async())
     
     async def stop(self):
         """Stop the userbot"""
