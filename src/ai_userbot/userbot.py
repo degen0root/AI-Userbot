@@ -33,8 +33,17 @@ class UserBot:
         self.rules_analyzer = ChatRulesAnalyzer()
         
         # Telethon client
+        # Ensure session is saved in the sessions directory
+        import os
+        session_dir = "/app/sessions"
+        os.makedirs(session_dir, exist_ok=True)
+        session_path = os.path.join(session_dir, config.telegram.session_name)
+        
+        log.info(f"Session path: {session_path}")
+        log.info(f"Session file exists: {os.path.exists(session_path + '.session')}")
+        
         self.client = TelegramClient(
-            session=config.telegram.session_name,
+            session=session_path,
             api_id=config.telegram.api_id,
             api_hash=config.telegram.api_hash,
         )
