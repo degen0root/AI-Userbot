@@ -487,7 +487,7 @@ class UserBot:
     async def join_chats_by_list(self, chat_list):
         """Join multiple chats by their usernames or IDs"""
         joined_count = 0
-        max_joins = min(len(chat_list), 50)  # Allow up to 50 joins per session
+        max_joins = len(chat_list)  # Allow joining all chats in the list per session
         log.info(f"Attempting to join up to {max_joins} out of {len(chat_list)} chats...")
 
         for i, chat_identifier in enumerate(chat_list[:max_joins]):
@@ -506,18 +506,32 @@ class UserBot:
 
                 log.info(f"Attempting to join chat: {parsed_identifier}")
                 
-                # Try to get chat entity
-                try:
-                    chat = await self.get_entity_cached(parsed_identifier)
-                except Exception as e:
-                    log.warning(f"Could not find chat {chat_identifier}: {e}")
-                    # Skip chats that don't exist or have invalid usernames
-                    if "No user has" in str(e) or "not supported between instances" in str(e):
-                        log.info(f"Skipping chat {chat_identifier} - invalid username or entity")
-                        continue
-                    else:
-                        # Re-raise other exceptions
-                        raise
+        # Try to get chat entity
+        try:
+            chat = await self.get_entity_cached(parsed_identifier)
+        except errors.FloodWaitError as e:
+            log.warning(f"FloodWait for {e.seconds} seconds on get_entity")
+            await asyncio.sleep(e.seconds)
+            # Retry after waiting
+            try:
+                chat = await self.get_entity_cached(parsed_identifier)
+            except Exception as retry_e:
+                log.warning(f"Could not find chat {chat_identifier} even after waiting: {retry_e}")
+                continue
+        except Exception as e:
+            log.warning(f"Could not find chat {chat_identifier}: {e}")
+            # Skip chats that don't exist or have invalid usernames
+            if "No user has" in str(e) or "not supported between instances" in str(e):
+                log.info(f"Skipping chat {chat_identifier} - invalid username or entity")
+                continue
+            else:
+                # Re-raise other exceptions
+                raise
+
+                # Skip if already joined this chat
+                if chat and chat.id in self.active_chats:
+                    log.info(f"Already joined chat {chat_identifier} - skipping")
+                    continue
 
                 # Note: We skip pre-join criteria check as requested - analyze only after joining
 
@@ -529,11 +543,17 @@ class UserBot:
                     await self.client(JoinChannelRequest(chat.id))
                 except errors.FloodWaitError as e:
                     log.warning(f"FloodWait for {e.seconds} seconds on JoinChannelRequest")
-                    if e.seconds > 300:  # Skip chats requiring more than 5 minutes wait
-                        log.info(f"Skipping chat {chat_identifier} - requires {e.seconds}s wait (>5min)")
+                    log.info(f"Waiting {e.seconds} seconds before retrying to join {chat_identifier}")
+                    await asyncio.sleep(e.seconds)
+                    # Retry joining after waiting
+                    try:
+                        await self.client(JoinChannelRequest(chat.id))
+                        log.info(f"Successfully joined chat after waiting: {getattr(chat, 'title', 'Unknown')}")
+                        joined_count += 1
+                        # Continue to analyze the chat
                         continue
-                    else:
-                        await asyncio.sleep(e.seconds)
+                    except Exception as retry_e:
+                        log.error(f"Failed to join chat {chat_identifier} even after waiting: {retry_e}")
                         continue
                 except Exception as e:
                     error_msg = str(e).lower()
