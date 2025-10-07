@@ -202,7 +202,14 @@ class Application:
         
         # Ensure Telethon session file exists to avoid repeated SendCode (FloodWait)
         session_name = self.config.telegram.session_name or "userbot_session"
-        session_path = Path(session_name + ".session")
+        # Check in sessions directory first (Docker environment)
+        session_dir = Path("/app/sessions")
+        if session_dir.exists():
+            session_path = session_dir / (session_name + ".session")
+        else:
+            # Fallback to current directory (local development)
+            session_path = Path(session_name + ".session")
+            
         if not session_path.exists():
             console.print("[red]Telegram session not found[/red]")
             console.print(f"Expected session file: [cyan]{session_path}[/cyan]")
