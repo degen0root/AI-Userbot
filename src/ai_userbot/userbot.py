@@ -637,6 +637,18 @@ class UserBot:
     
     async def start(self):
         """Start the userbot"""
+        # Load predefined chats from targets.txt if not set in config
+        if not self.config.telegram.predefined_chats:
+            targets_file = "/app/scripts/targets.txt"
+            try:
+                if os.path.exists(targets_file):
+                    with open(targets_file, 'r') as f:
+                        chats = [line.strip() for line in f if line.strip()]
+                        self.config.telegram.predefined_chats = chats
+                        log.info(f"Loaded {len(chats)} predefined chats from targets.txt")
+            except Exception as e:
+                log.error(f"Error loading targets.txt: {e}")
+        
         # Connect to Telegram
         await self.client.connect()
 
@@ -1331,6 +1343,9 @@ class UserBot:
 
     async def _chat_discovery_loop(self):
         """Background task to discover and join new chats"""
+        # Wait before starting discovery to avoid immediate flood
+        await asyncio.sleep(300)  # Wait 5 minutes after startup
+        
         while True:
             try:
                 # Find new chats
@@ -1413,7 +1428,12 @@ class UserBot:
                 try:
                     # Check if client is authorized before getting dialogs
                     if await self.client.is_user_authorized():
-                        dialogs = await self.client.get_dialogs(limit=100)
+                        try:
+                            dialogs = await self.client.get_dialogs(limit=100)
+                        except errors.FloodWaitError as e:
+                            log.warning(f"FloodWait for {e.seconds} seconds on get_dialogs")
+                            await asyncio.sleep(e.seconds)
+                            continue
 
                         for dialog in dialogs:
                             if (dialog.is_group and not dialog.is_channel and
