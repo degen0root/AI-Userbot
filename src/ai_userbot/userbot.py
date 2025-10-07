@@ -487,10 +487,21 @@ class UserBot:
     async def join_chats_by_list(self, chat_list):
         """Join multiple chats by their usernames or IDs"""
         joined_count = 0
-        max_joins = len(chat_list)  # Allow joining all chats in the list per session
-        log.info(f"Attempting to join up to {max_joins} out of {len(chat_list)} chats...")
+        max_joins_per_session = 20  # Strict limit to avoid bans
+        chats_to_process = min(len(chat_list), max_joins_per_session)
 
-        for i, chat_identifier in enumerate(chat_list[:max_joins]):
+        log.info(f"Attempting to join up to {chats_to_process} out of {len(chat_list)} chats...")
+
+        # Get current dialogs from Telegram API once at the beginning
+        try:
+            current_dialogs = await self.client.get_dialogs(limit=1000)
+            current_chat_ids = {dialog.entity.id for dialog in current_dialogs}
+            log.info(f"Found {len(current_chat_ids)} current dialogs in Telegram")
+        except Exception as e:
+            log.error(f"Could not get current dialogs: {e}")
+            current_chat_ids = set()
+
+        for i, chat_identifier in enumerate(chat_list[:chats_to_process]):
             try:
                 # Parse chat identifier (username, URL, or numeric ID)
                 parsed_identifier = self._parse_chat_identifier(chat_identifier)
@@ -500,7 +511,7 @@ class UserBot:
 
                 # Add delay between join attempts to avoid flood wait
                 if i > 0:
-                    delay = random.uniform(2, 5)  # Random delay 2-5 seconds
+                    delay = random.uniform(3, 8)  # Increased delay to avoid bans
                     log.debug(f"Waiting {delay:.1f}s before next join attempt")
                     await asyncio.sleep(delay)
 
@@ -511,6 +522,9 @@ class UserBot:
                     chat = await self.get_entity_cached(parsed_identifier)
                 except errors.FloodWaitError as e:
                     log.warning(f"FloodWait for {e.seconds} seconds on get_entity")
+                    if e.seconds > 60:  # If wait > 1 minute, skip this chat
+                        log.info(f"Skipping chat {chat_identifier} - too long wait ({e.seconds}s)")
+                        continue
                     await asyncio.sleep(e.seconds)
                     # Retry after waiting
                     try:
@@ -528,16 +542,26 @@ class UserBot:
                         # Re-raise other exceptions
                         raise
 
-                # Skip if already joined this chat
-                if chat and chat.id in self.active_chats:
-                    log.info(f"Already joined chat {chat_identifier} - skipping")
+                if not chat:
+                    log.warning(f"Chat entity is None for {chat_identifier}")
                     continue
 
-                # Sync chat status with Telegram API and database
-                already_in_chat = await self._sync_chat_status_with_telegram(chat)
-                if already_in_chat:
-                    log.info(f"Already in chat {chat_identifier} according to Telegram API - skipping join attempt")
+                # Check if already in this chat according to Telegram API
+                if chat.id in current_chat_ids:
+                    log.info(f"Already in chat {chat_identifier} according to Telegram API - skipping")
+                    # Update database to reflect joined status
+                    await self.db.add_chat(chat_id=chat.id, join_status='joined')
+                    self.active_chats.add(chat.id)
                     continue
+
+                # Check if chat has pending or rejected join status in database
+                try:
+                    existing_chat = await self.db.get_chat(chat.id)
+                    if existing_chat and existing_chat.join_status in ['pending', 'rejected']:
+                        log.info(f"Chat {chat_identifier} has status {existing_chat.join_status} in DB - skipping")
+                        continue
+                except Exception as db_e:
+                    log.warning(f"Could not check chat status for {chat_id}: {db_e}")
 
                 # Note: We skip pre-join criteria check as requested - analyze only after joining
 
@@ -549,16 +573,24 @@ class UserBot:
                     await self.client(JoinChannelRequest(chat.id))
                 except errors.FloodWaitError as e:
                     log.warning(f"FloodWait for {e.seconds} seconds on JoinChannelRequest")
-                    log.info(f"Waiting {e.seconds} seconds before retrying to join {chat_identifier}")
-                    await asyncio.sleep(e.seconds)
-                    # Retry joining after waiting
-                    try:
-                        await self.client(JoinChannelRequest(chat.id))
-                        log.info(f"Successfully joined chat after waiting: {getattr(chat, 'title', 'Unknown')}")
-                        joined_count += 1
-                    except Exception as retry_e:
-                        log.error(f"Failed to join chat {chat_identifier} even after waiting: {retry_e}")
+                    if e.seconds > 180:  # If wait > 3 minutes, skip this chat to avoid bans
+                        log.info(f"Skipping chat {chat_identifier} - too long wait ({e.seconds}s) on join attempt")
+                        # Mark as rejected to avoid future attempts
+                        await self.db.add_chat(chat_id=chat.id, join_status='rejected')
                         continue
+                    else:
+                        log.info(f"Waiting {e.seconds} seconds before retrying to join {chat_identifier}")
+                        await asyncio.sleep(e.seconds)
+                        # Retry joining after waiting
+                        try:
+                            await self.client(JoinChannelRequest(chat.id))
+                            log.info(f"Successfully joined chat after waiting: {getattr(chat, 'title', 'Unknown')}")
+                            joined_count += 1
+                        except Exception as retry_e:
+                            log.error(f"Failed to join chat {chat_identifier} even after waiting: {retry_e}")
+                            # Mark as rejected after failed retry
+                            await self.db.add_chat(chat_id=chat.id, join_status='rejected')
+                            continue
                 except Exception as e:
                     error_msg = str(e).lower()
                     if "successfully requested to join" in error_msg or ("wait" in error_msg and "seconds" in error_msg):
