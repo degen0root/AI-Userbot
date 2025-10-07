@@ -139,7 +139,7 @@ policy:
 
 llm:
   provider: "google"  # Options: stub, openai, anthropic, google/gemini
-  model: "gemini-1.5-flash"  # Use gemini-1.5-flash for better speed, or gemini-1.5-pro for better quality
+  model: "gemini-2.0-flash-lite"  # Use gemini-2.0-flash-lite for best speed/cost ratio
   temperature: 0.8
   max_tokens: 300
   # API keys should be set via environment variables:
