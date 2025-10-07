@@ -720,7 +720,7 @@ class UserBot:
                 log.info(f"Successfully logged in as {user.first_name} {getattr(user, 'last_name', '')}")
                 
                 # Явно сохраняем сессию
-                await self.client.session.save()
+                self.client.session.save()
                 log.info("Session saved successfully")
 
             except asyncio.TimeoutError:
