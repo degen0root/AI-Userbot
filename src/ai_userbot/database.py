@@ -30,6 +30,7 @@ class ChatRecord(Base):
     total_messages_sent = Column(Integer, default=0)
     total_promotions_sent = Column(Integer, default=0)
     ai_analysis = Column(Text)  # JSON field for AI analysis results
+    join_status = Column(String(20), default='joined')  # joined, pending, rejected
 
 
 class MessageRecord(Base):
@@ -100,9 +101,17 @@ class ChatDatabase:
         """Close database connections"""
         await self.engine.dispose()
     
+    async def get_chat(self, chat_id: int) -> Optional[ChatRecord]:
+        """Get chat record from database"""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(ChatRecord).where(ChatRecord.chat_id == chat_id)
+            )
+            return result.scalar_one_or_none()
+
     async def add_chat(self, chat_id: int, title: Optional[str] = None,
                       username: Optional[str] = None, members_count: int = 0,
-                      ai_analysis: Optional[dict] = None) -> ChatInfo:
+                      ai_analysis: Optional[dict] = None, join_status: str = 'joined') -> ChatInfo:
         """Add or update a chat in the database"""
         async with self.async_session() as session:
             # Check if chat exists
@@ -118,6 +127,7 @@ class ChatDatabase:
                 chat.members_count = members_count or chat.members_count
                 chat.last_activity = datetime.utcnow()
                 chat.is_active = True
+                chat.join_status = join_status
                 if ai_analysis:
                     chat.ai_analysis = json.dumps(ai_analysis)
             else:
@@ -127,6 +137,7 @@ class ChatDatabase:
                     title=title,
                     username=username,
                     members_count=members_count,
+                    join_status=join_status,
                     ai_analysis=json.dumps(ai_analysis) if ai_analysis else None
                 )
                 session.add(chat)

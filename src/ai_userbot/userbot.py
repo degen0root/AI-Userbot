@@ -528,10 +528,19 @@ class UserBot:
                         # Re-raise other exceptions
                         raise
 
-                # Skip if already joined this chat
+                # Skip if already joined this chat or has pending/rejected status
                 if chat and chat.id in self.active_chats:
                     log.info(f"Already joined chat {chat_identifier} - skipping")
                     continue
+
+                # Check if chat has pending or rejected join status
+                try:
+                    existing_chat = await self.db.get_chat(chat.id)
+                    if existing_chat and existing_chat.join_status in ['pending', 'rejected']:
+                        log.info(f"Chat {chat_identifier} has status {existing_chat.join_status} - skipping")
+                        continue
+                except Exception as db_e:
+                    log.warning(f"Could not check chat status for {chat_id}: {db_e}")
 
                 # Note: We skip pre-join criteria check as requested - analyze only after joining
 
@@ -559,6 +568,19 @@ class UserBot:
                         # This is actually a successful join request that needs admin approval
                         log.info(f"Join request sent for {chat_identifier} - waiting for admin approval")
                         joined_count += 1
+
+                        # Mark chat as pending approval in database
+                        try:
+                            await self.db.add_chat(
+                                chat_id=chat.id,
+                                title=getattr(chat, 'title', 'Unknown'),
+                                username=getattr(chat, 'username', None),
+                                members_count=getattr(chat, 'participants_count', 0),
+                                join_status='pending'
+                            )
+                        except Exception as db_e:
+                            log.warning(f"Could not mark chat {chat_id} as pending in database: {db_e}")
+
                         # Don't try to analyze immediately - wait for admin approval
                         continue
                     elif "chat for adults" in error_msg or "private" in error_msg:
@@ -946,6 +968,18 @@ class UserBot:
 
             log.info(f"Bot was approved and added to chat: {getattr(chat, 'title', 'Unknown')}")
 
+            # Update join status to 'joined' in database
+            try:
+                await self.db.add_chat(
+                    chat_id=chat_id,
+                    title=getattr(chat, 'title', 'Unknown'),
+                    username=getattr(chat, 'username', None),
+                    members_count=getattr(chat, 'participants_count', 0),
+                    join_status='joined'
+                )
+            except Exception as db_e:
+                log.warning(f"Could not update join status for chat {chat_id}: {db_e}")
+
             # Analyze chat content after joining (post-approval analysis)
             should_stay = await self._analyze_chat_content_after_joining(chat_id, chat)
 
@@ -959,7 +993,7 @@ class UserBot:
                     log.warning(f"Could not analyze rules for chat {chat_id}: {e}")
                     rules = {}
 
-                # Add to database and active chats
+                # Update database with analysis results
                 await self.db.add_chat(
                     chat_id=chat_id,
                     title=getattr(chat, 'title', 'Unknown'),
