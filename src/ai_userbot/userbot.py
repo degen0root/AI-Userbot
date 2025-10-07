@@ -6,12 +6,14 @@ import os
 import random
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import pytz
 import qrcode
 import io
 
 from telethon import TelegramClient, events, types, errors
+from telethon.tl.types import Message
+from telethon.errors.rpcerrorlist import ChatAdminRequired, UserBannedInChannel, FloodWaitError
 from telethon.tl.functions.channels import JoinChannelRequest
 
 from .config import AppConfig
@@ -305,7 +307,22 @@ class UserBot:
             await asyncio.sleep(delay)
 
             # Generate response
-            response = await self._generate_personal_response(message)
+            # Determine relationship stage
+            interaction_count = await self.db.get_personal_interaction_count(sender_id)
+            if interaction_count <= 2:
+                relationship_stage = "new_contact"
+            elif interaction_count <= 10:
+                relationship_stage = "acquaintance"
+            else:
+                relationship_stage = "friend"
+            
+            log.info(f"Interaction count with {sender_id}: {interaction_count}. Relationship stage: {relationship_stage}")
+
+            # Get tailored system prompt
+            system_prompt = self.persona.get_system_prompt_for_personal_chat(relationship_stage)
+
+            # Generate response
+            response = await self._generate_personal_response(message, system_prompt)
 
             if response:
                 try:
@@ -608,7 +625,7 @@ class UserBot:
                                 join_status='pending'
                             )
                         except Exception as db_e:
-                            log.warning(f"Could not mark chat {chat_id} as pending in database: {db_e}")
+                            log.warning(f"Could not mark chat {chat.id} as pending in database: {db_e}")
 
                         # Don't try to analyze immediately - wait for admin approval
                         continue
@@ -775,13 +792,13 @@ class UserBot:
 
         return len(recent_messages) < self.config.telegram.max_personal_replies_per_hour
 
-    async def _generate_personal_response(self, message):
+    async def _generate_personal_response(self, message, system_prompt: str):
         """Generate response to personal message"""
         try:
             context = f"Пользователь написал: {message.text or ''}"
 
             response = await self.llm.generate_response(
-                system_prompt=self.persona.get_system_prompt(),
+                system_prompt=system_prompt,
                 user_message=context,
                 chat_context={"is_personal": True}
             )
@@ -1489,7 +1506,7 @@ class UserBot:
                 includes_promotion=self.config.promoted_bot.username in response or self.config.promoted_bot.name in response
             )
 
-        except FloodWait as e:
+        except errors.FloodWaitError as e:
             log.warning(f"FloodWait for {e.seconds} seconds in chat {chat_id}")
             await asyncio.sleep(e.seconds)
         except Exception as e:
@@ -1999,7 +2016,7 @@ class UserBot:
         try:
             # Get base response from LLM
             response = await self.llm.generate_response(
-                system_prompt=self.persona.get_system_prompt(),
+                system_prompt=self.persona.get_system_prompt_for_group_chat(),
                 user_message=f"Контекст разговора:\n{context}\n\nНапиши естественный ответ в этом чате.",
                 chat_context={"chat_id": chat_id}
             )

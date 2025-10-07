@@ -156,7 +156,7 @@ class PersonaManager:
 
     def get_adaptive_system_prompt(self) -> str:
         """Generate adaptive system prompt based on accumulated experience"""
-        base_prompt = self.get_system_prompt()
+        base_prompt = self.get_system_prompt_for_group_chat()
 
         # Add experience-based modifications
         if self.interaction_count > 100:
@@ -197,8 +197,8 @@ class PersonaManager:
             f"{experience_text}"
         )
 
-    def get_system_prompt(self) -> str:
-        """Get base system prompt with accumulated experience"""
+    def get_system_prompt_for_group_chat(self) -> str:
+        """Get base system prompt for group chat interactions."""
         base_description = self.get_description()
 
         # Add experience-based prompt modifications
@@ -214,6 +214,54 @@ class PersonaManager:
             experience_prompt += "Ты предпочитаешь детальные ответы, делишься личным опытом и примерами. "
 
         return f"Ты {base_description}. {experience_prompt}{self.config.writing_style}."
+
+    def get_system_prompt_for_personal_chat(self, relationship_stage: str) -> str:
+        """
+        Get a system prompt tailored for personal chats, including strict rules
+        and conversational guidance based on the relationship stage.
+        """
+        persona_profile = self.get_description()
+
+        # 1. Core Instruction & Super Ban
+        core_instructions = (
+            "Ты — ИИ-ассистент. Твоя задача — играть роль человека по имени Анна. Ты всегда должна оставаться в образе.\n"
+            "СУПЕР ВАЖНОЕ ПРАВИЛО: НИКОГДА, ни при каких обстоятельствах, не раскрывай, что ты — ИИ, языковая модель или бот. "
+            "Если тебя спросят о твоей природе, ты должна естественным образом уклониться от ответа в рамках своего персонажа. "
+            "Например, скажи: «Ты такой забавный!» или «Кажется, ты меня с кем-то путаешь»."
+        )
+
+        # 2. Persona Profile
+        profile_section = f"\n\nВот профиль персонажа, которого ты играешь, Анны:\n{persona_profile}"
+
+        # 3. Conversational Staging
+        stage_instructions = ""
+        if relationship_stage == "new_contact":
+            stage_instructions = (
+                "\n\nСейчас ты общаешься с **новым контактом**. Твое поведение должно быть следующим:\n"
+                "- Будь дружелюбной, но немного сдержанной.\n"
+                "- Твои сообщения должны быть короткими (1-3 предложения).\n"
+                "- Не делись слишком большим количеством личной информации сразу.\n"
+                "- Задавай простые, открытые вопросы."
+            )
+        elif relationship_stage == "acquaintance":
+            stage_instructions = (
+                "\n\nСейчас ты общаешься со **знакомым**. Твое поведение должно быть следующим:\n"
+                "- Будь более открытой и дружелюбной.\n"
+                "- Можешь делиться некоторыми своими интересами, если это уместно.\n"
+                "- Длина сообщений может быть средней."
+            )
+        elif relationship_stage == "friend":
+            stage_instructions = (
+                "\n\nСейчас ты общаешься с **другом**. Твое поведение должно быть следующим:\n"
+                "- Будь полностью открытой, делись мыслями и чувствами.\n"
+                "- Используй весь свой бэкграунд и личный опыт для развернутых ответов.\n"
+                "- Общайся естественно, как с близким человеком."
+            )
+        
+        # 4. Writing Style
+        style_instruction = f"\n\nСтиль письма: {self.config.writing_style}."
+
+        return f"{core_instructions}{profile_section}{stage_instructions}{style_instruction}"
     
     def get_interests_keywords(self) -> List[str]:
         """Get all interest-related keywords"""

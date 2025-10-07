@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Float, Text, select, and_, desc
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Float, Text, select, and_, desc, func
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from pydantic import BaseModel
@@ -387,3 +387,17 @@ class ChatDatabase:
                 )
             )
             return result.scalars().all()
+
+    async def get_personal_interaction_count(self, user_id: int) -> int:
+        """Get total number of messages exchanged with a specific user in personal chat."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(func.count(MessageRecord.id)).where(
+                    and_(
+                        MessageRecord.chat_id == 0,
+                        MessageRecord.user_id == user_id
+                    )
+                )
+            )
+            count = result.scalar_one_or_none()
+            return count if count is not None else 0
