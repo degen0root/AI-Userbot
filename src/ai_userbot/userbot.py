@@ -255,18 +255,32 @@ class UserBot:
 
         message = event.message
         sender = await event.get_sender()
-        
-        log.info(f"Received personal message from {sender.first_name if sender else 'Unknown'}: {message.text[:50]}")
+
+        # Handle different sender types (User vs Channel)
+        if sender:
+            if hasattr(sender, 'first_name'):
+                # This is a User object (personal message)
+                sender_name = f"{sender.first_name} {getattr(sender, 'last_name', '')}".strip()
+                sender_id = sender.id
+            else:
+                # This is a Channel object or other type
+                sender_name = getattr(sender, 'title', 'Channel')
+                sender_id = getattr(sender, 'id', 0)
+        else:
+            sender_name = 'Unknown'
+            sender_id = 0
+
+        log.info(f"Received personal message from {sender_name}: {message.text[:50]}")
 
         # Check hourly limit for personal messages
-        if not await self._check_personal_hourly_limit(sender.id if sender else 0):
-            log.debug(f"Personal message limit reached for user {sender.id if sender else 0}")
+        if not await self._check_personal_hourly_limit(sender_id):
+            log.debug(f"Personal message limit reached for user {sender_id}")
             return
 
         # Store message context and update persona experience
         await self.db.add_message_context(
             chat_id=0,  # Personal messages don't have chat_id
-            user_id=sender.id if sender else 0,
+            user_id=sender_id,
             username=sender.username if sender and hasattr(sender, 'username') else "",
             message_text=message.text or "",
             timestamp=message.date
