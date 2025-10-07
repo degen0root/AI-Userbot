@@ -523,6 +523,9 @@ class UserBot:
 
                 # Join chat
                 try:
+                    if chat is None:
+                        log.error(f"Cannot join chat {chat_identifier} - entity is None")
+                        continue
                     await self.client(JoinChannelRequest(chat.id))
                 except errors.FloodWaitError as e:
                     log.warning(f"FloodWait for {e.seconds} seconds on JoinChannelRequest")
@@ -549,6 +552,9 @@ class UserBot:
 
                 # Analyze chat content
                 try:
+                    if chat is None:
+                        log.error(f"Cannot analyze chat {chat_identifier} - entity is None")
+                        continue
                     recent_messages = []
                     async for message in self.client.iter_messages(chat.id, limit=10):
                         if message.text:
