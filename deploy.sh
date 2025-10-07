@@ -218,11 +218,15 @@ restart_bot() {
 update_bot() {
     echo -e "${YELLOW}⬆️  Updating from GitHub...${NC}"
     echo "This will pull the latest code, stop the bot, rebuild the container, and restart it."
-    read -p "Continue? (y/N) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        ssh "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && git pull origin main && docker compose -f docker-compose.ai-userbot.yml down && docker compose -f docker-compose.ai-userbot.yml build --no-cache --pull && docker compose -f docker-compose.ai-userbot.yml up -d"
-        echo -e "${GREEN}Updated!${NC}"
+    
+    # Run Docker Compose update
+    ssh "$REMOTE_HOST" "cd $REMOTE_DIR && \\
+        git pull && \\
+        docker compose pull && \\
+        docker compose up -d --build --force-recreate"
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Bot updated successfully on remote server"
     fi
 }
 
