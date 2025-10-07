@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
 import time
 from datetime import datetime, timedelta
@@ -579,10 +580,16 @@ class UserBot:
     async def _join_predefined_chats(self):
         """Auto-join predefined chats on startup"""
         try:
+            log.info(f"_join_predefined_chats called with {len(self.config.telegram.predefined_chats)} chats")
+            if not self.config.telegram.predefined_chats:
+                log.warning("No predefined chats to join")
+                return
+
             log.info(f"Starting to join {len(self.config.telegram.predefined_chats)} predefined chats...")
             await asyncio.sleep(10)  # Wait for bot to fully start
             log.info(f"Joining predefined chats: {self.config.telegram.predefined_chats}")
             await self.join_chats_by_list(self.config.telegram.predefined_chats)
+            log.info("Finished joining predefined chats")
         except Exception as e:
             log.error(f"Error joining predefined chats: {e}", exc_info=True)
 
@@ -638,16 +645,22 @@ class UserBot:
     async def start(self):
         """Start the userbot"""
         # Load predefined chats from targets.txt if not set in config
+        log.info(f"Current predefined chats in config: {len(self.config.telegram.predefined_chats)}")
         if not self.config.telegram.predefined_chats:
             targets_file = "/app/scripts/targets.txt"
             try:
                 if os.path.exists(targets_file):
-                    with open(targets_file, 'r') as f:
+                    with open(targets_file, 'r', encoding='utf-8') as f:
                         chats = [line.strip() for line in f if line.strip()]
                         self.config.telegram.predefined_chats = chats
                         log.info(f"Loaded {len(chats)} predefined chats from targets.txt")
+                        log.info(f"First few chats: {chats[:3]}")
+                else:
+                    log.warning(f"Targets file not found: {targets_file}")
             except Exception as e:
                 log.error(f"Error loading targets.txt: {e}")
+        else:
+            log.info(f"Using {len(self.config.telegram.predefined_chats)} predefined chats from config")
         
         # Connect to Telegram
         await self.client.connect()
