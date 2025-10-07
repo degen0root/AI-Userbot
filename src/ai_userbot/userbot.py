@@ -13,7 +13,7 @@ import io
 
 from telethon import TelegramClient, events, types, errors
 from telethon.tl.types import Message
-from telethon.errors.rpcerrorlist import ChatAdminRequired, UserBannedInChannel, FloodWaitError
+from telethon.errors import ChatAdminRequiredError, UserBannedInChannelError, FloodWaitError
 from telethon.tl.functions.channels import JoinChannelRequest
 
 from .config import AppConfig
@@ -1765,7 +1765,7 @@ class UserBot:
                         self.chat_rules_cache[chat.id] = rules
                         log.info(f"Joined chat: {chat.title} (ID: {chat.id}) - AI Score: {chat_analysis['relevance_score']:.2f}")
 
-                    except (ChatAdminRequired, UserBannedInChannel) as e:
+                    except (ChatAdminRequiredError, UserBannedInChannelError) as e:
                         log.warning(f"Could not join chat {chat.id}: {e}")
                     except Exception as e:
                         log.error(f"Error joining chat {chat.id}: {e}")
