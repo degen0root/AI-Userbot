@@ -641,10 +641,20 @@ class UserBot:
         await self.client.connect()
 
         # Check if already authorized (existing session works)
-        if await self.client.is_user_authorized():
-            log.info("Using existing session - bot is already authorized")
-        else:
-            log.warning("Session not authorized or corrupted. Starting QR login flow.")
+        try:
+            is_authorized = await self.client.is_user_authorized()
+            log.info(f"Authorization check result: {is_authorized}")
+            
+            if is_authorized:
+                me = await self.client.get_me()
+                log.info(f"Using existing session - authorized as: {me.first_name} {getattr(me, 'last_name', '')} (@{me.username})")
+            else:
+                log.warning("Session not authorized or corrupted. Starting QR login flow.")
+        except Exception as e:
+            log.error(f"Error checking authorization: {e}")
+            is_authorized = False
+            
+        if not is_authorized:
             try:
                 # Попробуем альтернативный метод генерации QR-кода
                 # Используем прямой вывод для QR-кода, чтобы избежать форматирования логгера
@@ -701,13 +711,17 @@ class UserBot:
                 print("3. Войдите в аккаунт", flush=True)
                 print("4. Дождитесь завершения авторизации", flush=True)
 
-                print("⏰ ОЖИДАНИЕ АВТОРИЗАЦИИ... (до 2 минут) ⏰", flush=True)
+                print("⏰ ОЖИДАНИЕ АВТОРИЗАЦИИ... (до 30 секунд) ⏰", flush=True)
                 print("="*80 + "\n", flush=True)
                 sys.stdout.flush()
 
-                user = await qr_login.wait(timeout=120)
+                user = await qr_login.wait(timeout=30)
                 print(f"✅ УСПЕШНАЯ АВТОРИЗАЦИЯ: {user.first_name} {getattr(user, 'last_name', '')}")
                 log.info(f"Successfully logged in as {user.first_name} {getattr(user, 'last_name', '')}")
+                
+                # Явно сохраняем сессию
+                await self.client.session.save()
+                log.info("Session saved successfully")
 
             except asyncio.TimeoutError:
                 log.error("❌ Таймаут авторизации. Перезапустите бота.")
