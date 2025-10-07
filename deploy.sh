@@ -184,7 +184,7 @@ deploy_bot() {
 # Function to show logs
 show_logs() {
     echo -e "${GREEN}📋 Showing live logs (Ctrl+C to stop):${NC}"
-    ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker compose -f docker-compose.ai-userbot.yml logs -f --tail=50"
+    ssh -t "$REMOTE_HOST" "set -a; source ~/.ai-userbot.env; set +a; cd $REMOTE_DIR && docker compose -f docker-compose.ai-userbot.yml logs -f --tail=2000"
 }
 
 # Function to show status

@@ -473,9 +473,10 @@ class UserBot:
     async def join_chats_by_list(self, chat_list):
         """Join multiple chats by their usernames or IDs"""
         joined_count = 0
-        log.info(f"Attempting to join {len(chat_list)} chats...")
+        max_joins = min(len(chat_list), 10)  # Limit to 10 joins per session to avoid global bans
+        log.info(f"Attempting to join up to {max_joins} out of {len(chat_list)} chats...")
 
-        for i, chat_identifier in enumerate(chat_list):
+        for i, chat_identifier in enumerate(chat_list[:max_joins]):
             try:
                 # Parse chat identifier (username, URL, or numeric ID)
                 parsed_identifier = self._parse_chat_identifier(chat_identifier)
@@ -496,7 +497,13 @@ class UserBot:
                     chat = await self.get_entity_cached(parsed_identifier)
                 except Exception as e:
                     log.warning(f"Could not find chat {chat_identifier}: {e}")
-                    continue
+                    # Skip chats that don't exist or have invalid usernames
+                    if "No user has" in str(e) or "not supported between instances" in str(e):
+                        log.info(f"Skipping chat {chat_identifier} - invalid username or entity")
+                        continue
+                    else:
+                        # Re-raise other exceptions
+                        raise
 
                 # Check if chat meets criteria
                 if not self._is_suitable_chat(chat):
@@ -504,32 +511,60 @@ class UserBot:
                     continue
 
                 # Join chat
-                await self.client(JoinChannelRequest(chat.id))
+                try:
+                    await self.client(JoinChannelRequest(chat.id))
+                except errors.FloodWaitError as e:
+                    log.warning(f"FloodWait for {e.seconds} seconds on JoinChannelRequest")
+                    if e.seconds > 300:  # Skip chats requiring more than 5 minutes wait
+                        log.info(f"Skipping chat {chat_identifier} - requires {e.seconds}s wait (>5min)")
+                        continue
+                    else:
+                        await asyncio.sleep(e.seconds)
+                        continue
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if "successfully requested to join" in error_msg or ("wait" in error_msg and "seconds" in error_msg):
+                        # This is actually a successful join request that needs admin approval
+                        log.info(f"Join request sent for {chat_identifier} - waiting for admin approval")
+                        joined_count += 1
+                        # Don't try to analyze immediately - wait for admin approval
+                        continue
+                    elif "chat for adults" in error_msg or "private" in error_msg:
+                        log.info(f"Skipping private/adult chat {chat_identifier}")
+                        continue
+                    else:
+                        log.error(f"Error joining chat {chat_identifier}: {e}")
+                        continue
 
                 # Analyze chat content
-                recent_messages = []
-                async for message in self.client.iter_messages(chat.id, limit=10):
-                    if message.text:
-                        recent_messages.append(message.text)
+                try:
+                    recent_messages = []
+                    async for message in self.client.iter_messages(chat.id, limit=10):
+                        if message.text:
+                            recent_messages.append(message.text)
 
-                # Deep analysis
-                chat_analysis = await self._analyze_chat_content_deep(chat, recent_messages)
+                    # Deep analysis
+                    chat_analysis = await self._analyze_chat_content_deep(chat, recent_messages)
 
-                if chat_analysis["should_stay"]:
-                    # Add to database
-                    await self.db.add_chat(
-                        chat_id=chat.id,
-                        title=getattr(chat, 'title', 'Unknown'),
-                        username=getattr(chat, 'username', None),
-                        members_count=getattr(chat, 'participants_count', 0),
-                        ai_analysis=chat_analysis
-                    )
+                    if chat_analysis["should_stay"]:
+                        # Add to database
+                        await self.db.add_chat(
+                            chat_id=chat.id,
+                            title=getattr(chat, 'title', 'Unknown'),
+                            username=getattr(chat, 'username', None),
+                            members_count=getattr(chat, 'participants_count', 0),
+                            ai_analysis=chat_analysis
+                        )
 
-                    self.active_chats.add(chat.id)
-                    joined_count += 1
-                    log.info(f"Successfully joined chat: {getattr(chat, 'title', 'Unknown')}")
-                else:
-                    log.info(f"Leaving chat {chat_identifier} after analysis: {chat_analysis['reason']}")
+                        self.active_chats.add(chat.id)
+                        log.info(f"Successfully joined and staying in chat: {getattr(chat, 'title', 'Unknown')}")
+                    else:
+                        log.info(f"Leaving chat {chat_identifier} after analysis: {chat_analysis['reason']}")
+                        await self.client.delete_dialog(chat.id)
+                except Exception as e:
+                    log.warning(f"Error analyzing chat {chat_identifier}: {e}")
+                    # If we can't analyze the chat, assume it's not suitable
+                    log.info(f"Leaving chat {chat_identifier} due to analysis error")
                     await self.client.delete_dialog(chat.id)
 
             except Exception as e:
