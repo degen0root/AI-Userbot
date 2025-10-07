@@ -48,6 +48,7 @@ telegram:
     - "@moms_moscow"
 
   auto_join_predefined_chats: true
+  respond_to_personal_messages: true
   
   # Chat categories (для разного поведения)
   chat_categories:
@@ -89,6 +90,12 @@ policy:
     - "политика"
     - "продажа"
     - "реклама"
+  
+  # Chat discovery settings
+  chat_discovery_interval: 1800  # 30 minutes between chat searches
+  max_new_chats_per_cycle: 3  # Max chats to join per search cycle
+  daily_message_target: 200  # Target messages per day
+  max_chats_per_day: 10  # Max new chats to join per day
   
   # Human-like behavior
   typing_speed_wpm: 40

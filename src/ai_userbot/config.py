@@ -118,6 +118,10 @@ class PolicySection(BaseModel):
 
     # Human-like behavior
     typo_probability: float = 0.05  # 5% шанс опечатки
+    
+    # Chat discovery settings
+    chat_discovery_interval: int = 1800  # 30 минут между поисками чатов
+    max_new_chats_per_cycle: int = 3  # Максимум чатов для присоединения за цикл
     message_length_variation: float = 0.3  # Варьировать длину сообщения на ±30%
     response_time_jitter: int = 60  # Разброс времени ответа ±60 секунд
     

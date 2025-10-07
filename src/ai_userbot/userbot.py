@@ -245,6 +245,8 @@ class UserBot:
 
         message = event.message
         sender = await event.get_sender()
+        
+        log.info(f"Received personal message from {sender.first_name if sender else 'Unknown'}: {message.text[:50]}")
 
         # Check hourly limit for personal messages
         if not await self._check_personal_hourly_limit(sender.id if sender else 0):
@@ -461,6 +463,7 @@ class UserBot:
     async def join_chats_by_list(self, chat_list):
         """Join multiple chats by their usernames or IDs"""
         joined_count = 0
+        log.info(f"Attempting to join {len(chat_list)} chats...")
 
         for chat_identifier in chat_list:
             try:
@@ -470,6 +473,8 @@ class UserBot:
                     log.warning(f"Could not parse chat identifier: {chat_identifier}")
                     continue
 
+                log.info(f"Attempting to join chat: {parsed_identifier}")
+                
                 # Try to get chat entity
                 try:
                     chat = await self.get_entity_cached(parsed_identifier)
@@ -565,10 +570,12 @@ class UserBot:
     async def _join_predefined_chats(self):
         """Auto-join predefined chats on startup"""
         try:
+            log.info(f"Starting to join {len(self.config.telegram.predefined_chats)} predefined chats...")
             await asyncio.sleep(10)  # Wait for bot to fully start
+            log.info(f"Joining predefined chats: {self.config.telegram.predefined_chats}")
             await self.join_chats_by_list(self.config.telegram.predefined_chats)
         except Exception as e:
-            log.error(f"Error joining predefined chats: {e}")
+            log.error(f"Error joining predefined chats: {e}", exc_info=True)
 
     async def _should_respond_to_personal(self, sender, message):
         """Determine if we should respond to a personal message"""
