@@ -646,10 +646,35 @@ class UserBot:
                 print(f"📱 АВТОРИЗАЦИОННЫЙ URL: {qr_login.url}")
                 print("="*80)
 
-                # Показываем только URL для авторизации (более надежно)
+                # Генерируем QR-код
+                try:
+                    import qrcode
+                    qr = qrcode.QRCode(
+                        version=1,
+                        error_correction=qrcode.constants.ERROR_CORRECT_L,
+                        box_size=1,
+                        border=2,
+                    )
+                    qr.add_data(qr_login.url)
+                    qr.make(fit=True)
+
+                    # Создаем ASCII QR-код
+                    print("\n📱 QR-КОД ДЛЯ СКАНИРОВАНИЯ:")
+                    print("")
+                    matrix = qr.get_matrix()
+                    for row in matrix:
+                        line = ""
+                        for cell in row:
+                            line += "██" if cell else "  "
+                        print(line)
+                    print("")
+                    
+                except Exception as e:
+                    print(f"Не удалось сгенерировать QR-код: {e}")
+                    
                 print("📱 ДЛЯ АВТОРИЗАЦИИ:")
-                print("1. Скопируйте URL выше")
-                print("2. Откройте в браузере или Telegram Desktop")
+                print("1. Отсканируйте QR-код выше ИЛИ")
+                print("2. Скопируйте URL и откройте в браузере")
                 print("3. Войдите в аккаунт")
                 print("4. Дождитесь завершения авторизации")
 
