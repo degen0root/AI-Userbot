@@ -651,22 +651,23 @@ class UserBot:
                     qr = qrcode.QRCode(
                         version=1,
                         error_correction=qrcode.constants.ERROR_CORRECT_L,
-                        box_size=2,
-                        border=2,
+                        box_size=1,
+                        border=1,
                     )
                     qr.add_data(qr_login.url)
                     qr.make(fit=True)
 
-                    # Создаем более четкий ASCII-арт
+                    # Создаем простой ASCII-арт с одним символом на модуль
                     ascii_qr = []
                     for row in qr.get_matrix():
-                        ascii_row = ''.join(['██' if cell else '░░' for cell in row])
+                        ascii_row = ''.join(['█' if cell else ' ' for cell in row])
                         ascii_qr.append(ascii_row)
 
                     print("📱 QR-КОД ДЛЯ СКАНИРОВАНИЯ:")
+                    print("=" * 50)
                     for line in ascii_qr:
                         print(line)
-                    print("="*80)
+                    print("=" * 50)
 
                 except Exception as qr_error:
                     log.warning(f"Не удалось сгенерировать QR-код: {qr_error}")
