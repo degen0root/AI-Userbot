@@ -253,6 +253,97 @@ class UserBot:
                 log.info(f"Bot was removed from chat {event.chat_id}")
                 await self._handle_chat_left(event.chat_id)
 
+        # Handle messages from the Moon Temple bot (Anna's daily recommendations)
+        @self.client.on(events.NewMessage(chats=None, incoming=True))
+        async def on_moon_bot_message(event):
+            if not self.config.self_bot.enabled:
+                return
+
+            message = event.message
+            sender = await event.get_sender()
+
+            # Check if this is from the Moon Temple bot
+            if sender and hasattr(sender, 'username') and sender.username == self.config.self_bot.username.replace('@', ''):
+                log.info(f"Received message from {self.config.self_bot.name}: {message.text[:50]}...")
+                await self._handle_moon_bot_recommendations(message)
+                # Don't process this as a regular message
+
+    async def _handle_moon_bot_recommendations(self, message):
+        """Handle recommendations from the Moon Temple bot"""
+        try:
+            message_text = message.text or ""
+
+            # Parse recommendations from the message
+            recommendations = self._parse_bot_recommendations(message_text)
+
+            if recommendations:
+                # Apply recommendations to Anna's mood
+                mood_message = self.persona.apply_recommendations_to_mood(recommendations)
+
+                log.info(f"Moon bot recommendations applied successfully")
+                log.info(f"Cycle: {recommendations.get('cycle', 'N/A')[:50]}...")
+                log.info(f"Moon: {recommendations.get('moon', 'N/A')[:50]}...")
+                log.info(f"Mood effect: {mood_message}")
+
+                # Log this as a special interaction
+                await self.db.log_message(
+                    chat_id=message.chat_id,
+                    user_id=0,  # System message
+                    message_text=f"Daily recommendations received from {self.config.self_bot.name}",
+                    is_bot_message=False
+                )
+            else:
+                log.warning(f"Could not parse recommendations from message: {message_text[:100]}...")
+
+        except Exception as e:
+            log.error(f"Error handling moon bot recommendations: {e}")
+
+    def _parse_bot_recommendations(self, message_text: str) -> Dict[str, str]:
+        """Parse cycle and moon recommendations from bot message"""
+        recommendations = {}
+
+        # Look for cycle-related content
+        cycle_keywords = [
+            "цикл", "менструальн", "фаза", "энергия", "гормон", "самоанализ",
+            "медитация", "размышления", "творчес", "отдых", "восстановление",
+            "планирование", "интуиция", "решения"
+        ]
+
+        # Look for moon-related content
+        moon_keywords = [
+            "луна", "лунный", "растущая", "полнолуние", "убывающая", "новолуние",
+            "эмоции", "чувства", "начинания", "цели", "порядок", "завершение",
+            "близкие", "вода"
+        ]
+
+        text_lower = message_text.lower()
+
+        # Extract cycle recommendation
+        for keyword in cycle_keywords:
+            if keyword in text_lower:
+                # Find the sentence or relevant part
+                sentences = message_text.split('.')
+                for sentence in sentences:
+                    if keyword in sentence.lower():
+                        recommendations['cycle'] = sentence.strip()
+                        break
+                if 'cycle' in recommendations:
+                    break
+
+        # Extract moon recommendation
+        for keyword in moon_keywords:
+            if keyword in text_lower:
+                # Find the sentence or relevant part
+                sentences = message_text.split('.')
+                for sentence in sentences:
+                    if keyword in sentence.lower():
+                        recommendations['moon'] = sentence.strip()
+                        break
+                if 'moon' in recommendations:
+                    break
+
+        return recommendations
+
     async def _handle_personal_message(self, event):
         """Handle personal messages (DMs)"""
         if not self.config.telegram.respond_to_personal_messages:
@@ -998,7 +1089,6 @@ class UserBot:
         asyncio.create_task(self._chat_discovery_loop())
         asyncio.create_task(self._cleanup_old_messages())
         asyncio.create_task(self._activity_scheduler())
-        asyncio.create_task(self._daily_recommendations_scheduler())
 
         # Auto-join predefined chats if enabled (in background)
         if self.config.telegram.auto_join_predefined_chats and self.config.telegram.predefined_chats:
@@ -1996,41 +2086,6 @@ class UserBot:
                 log.error(f"Error in activity scheduler: {e}")
                 await asyncio.sleep(1800)
 
-    async def _daily_recommendations_scheduler(self):
-        """Scheduler for daily bot recommendations that affect Anna's mood"""
-        while True:
-            try:
-                current_time = datetime.now(pytz.timezone(self.config.policy.timezone))
-
-                # Check if it's time for daily recommendations (9 AM by default)
-                target_hour = self.config.self_bot.daily_check_hour
-
-                if current_time.hour == target_hour and current_time.minute == 0:
-                    if self.config.self_bot.enabled:
-                        log.info(f"Time for daily recommendations from {self.config.self_bot.name}")
-
-                        # Get recommendations from the bot
-                        recommendations = self.persona.check_daily_recommendations()
-
-                        # Apply influence to Anna's mood
-                        mood_message = self.persona.apply_recommendations_to_mood(recommendations)
-
-                        log.info(f"Daily recommendations applied. {mood_message}")
-                        log.info(f"Cycle recommendation: {recommendations['cycle'][:50]}...")
-                        log.info(f"Moon recommendation: {recommendations['moon'][:50]}...")
-
-                        # Wait until next day
-                        await asyncio.sleep(86400)  # 24 hours
-                    else:
-                        # Wait until next day even if disabled
-                        await asyncio.sleep(86400)
-                else:
-                    # Check every minute
-                    await asyncio.sleep(60)
-
-            except Exception as e:
-                log.error(f"Error in daily recommendations scheduler: {e}")
-                await asyncio.sleep(3600)  # Wait an hour before retrying
 
     def _is_active_time(self, current_time):
         """Check if current time is within active hours"""

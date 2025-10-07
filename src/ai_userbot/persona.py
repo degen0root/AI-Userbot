@@ -433,27 +433,11 @@ class PersonaManager:
         deep_count = sum(1 for keyword in deep_keywords if keyword in context_lower)
         return deep_count >= 2 and random.random() < 0.05  # 5% chance for deep conversations
 
-    def check_daily_recommendations(self) -> Dict[str, str]:
-        """Check if it's time for daily bot recommendations and get them"""
-        from datetime import datetime, date
-
-        # Check if we already checked today
-        today = date.today()
-        if self.last_recommendation_check == today:
-            return {
-                "cycle": self.current_cycle_recommendations or "Рекомендации не получены",
-                "moon": self.current_moon_recommendations or "Рекомендации не получены"
-            }
-
-        # For demo purposes, generate sample recommendations
-        # In real implementation, this would interact with the actual bot
-        self.current_cycle_recommendations = self._generate_cycle_recommendations()
-        self.current_moon_recommendations = self._generate_moon_recommendations()
-
-        self.last_recommendation_check = today
+    def get_current_recommendations(self) -> Dict[str, str]:
+        """Get current recommendations if available"""
         return {
-            "cycle": self.current_cycle_recommendations,
-            "moon": self.current_moon_recommendations
+            "cycle": self.current_cycle_recommendations or "Рекомендации не получены",
+            "moon": self.current_moon_recommendations or "Рекомендации не получены"
         }
 
     def _generate_cycle_recommendations(self) -> str:
@@ -483,6 +467,10 @@ class PersonaManager:
         """Apply bot recommendations to influence Anna's mood"""
         cycle_rec = recommendations.get("cycle", "")
         moon_rec = recommendations.get("moon", "")
+
+        # Store current recommendations
+        self.current_cycle_recommendations = cycle_rec
+        self.current_moon_recommendations = moon_rec
 
         # Analyze recommendations to determine mood influence
         mood_influences = []
