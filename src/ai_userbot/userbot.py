@@ -882,40 +882,95 @@ class UserBot:
         await self.client.disconnect()
         log.info("UserBot stopped")
 
+    async def _analyze_chat_content_after_joining(self, chat_id, chat):
+        """Analyze chat content after joining (for admin-approved chats)"""
+        try:
+            # Check if bot can send messages in this chat
+            try:
+                permissions = await self.client.get_permissions(chat_id)
+                if not permissions.send_messages:
+                    log.info(f"Cannot send messages in chat {chat_id} - leaving")
+                    await self.db.add_chat(
+                        chat_id=chat_id,
+                        title=getattr(chat, 'title', 'Unknown'),
+                        username=getattr(chat, 'username', None),
+                        members_count=getattr(chat, 'participants_count', 0),
+                        ai_analysis={"should_stay": False, "reason": "Cannot send messages", "no_send_permission": True}
+                    )
+                    await self.client.delete_dialog(chat_id)
+                    return False
+            except Exception as perm_e:
+                log.warning(f"Could not check permissions for chat {chat_id}: {perm_e}")
+
+            # Get recent messages for analysis
+            recent_messages = []
+            message_authors = []
+            try:
+                async for message in self.client.iter_messages(chat_id, limit=20):
+                    if message.text and message.sender_id:
+                        recent_messages.append(message.text)
+                        message_authors.append(message.sender_id)
+            except Exception as e:
+                log.warning(f"Could not get messages for analysis in chat {chat_id}: {e}")
+                # If we can't get messages, assume chat is not suitable
+                await self.client.delete_dialog(chat_id)
+                return False
+
+            # Deep analysis
+            chat_analysis = await self._analyze_chat_content_deep(chat, recent_messages, message_authors)
+
+            if chat_analysis["should_stay"]:
+                log.info(f"Chat {chat_id} passed content analysis - staying")
+                return True
+            else:
+                log.info(f"Chat {chat_id} failed content analysis: {chat_analysis['reason']} - leaving")
+                await self.client.delete_dialog(chat_id)
+                return False
+
+        except Exception as e:
+            log.error(f"Error analyzing chat {chat_id} after joining: {e}")
+            # If we can't analyze the chat, leave it
+            try:
+                await self.client.delete_dialog(chat_id)
+            except:
+                pass
+            return False
+
     async def _handle_new_chat_joined(self, chat_id):
-        """Handle when bot is added to a new chat"""
+        """Handle when bot is added to a new chat (after admin approval)"""
         try:
             # Get chat info
             chat = await self.get_entity_cached(chat_id)
             if not chat:
                 return
 
-            # Check if chat meets criteria
-            if not self._is_suitable_chat(chat):
-                log.info(f"Chat {chat_id} doesn't meet criteria, leaving")
-                await self.client.delete_dialog(chat_id)
-                return
+            log.info(f"Bot was approved and added to chat: {getattr(chat, 'title', 'Unknown')}")
 
-            # Analyze chat rules
-            try:
-                pinned = await self._get_pinned_messages(chat_id)
-                rules = self.rules_analyzer.analyze_chat_rules(chat, pinned)
-                self.chat_rules_cache[chat_id] = rules
-            except Exception as e:
-                log.warning(f"Could not analyze rules for chat {chat_id}: {e}")
-                rules = {}
+            # Analyze chat content after joining (post-approval analysis)
+            should_stay = await self._analyze_chat_content_after_joining(chat_id, chat)
 
-            # Add to database
-            await self.db.add_chat(
-                chat_id=chat_id,
-                title=getattr(chat, 'title', 'Unknown'),
-                username=getattr(chat, 'username', None),
-                members_count=getattr(chat, 'participants_count', 0),
-                is_active=True
-            )
+            if should_stay:
+                # Analyze chat rules
+                try:
+                    pinned = await self._get_pinned_messages(chat_id)
+                    rules = self.rules_analyzer.analyze_chat_rules(chat, pinned)
+                    self.chat_rules_cache[chat_id] = rules
+                except Exception as e:
+                    log.warning(f"Could not analyze rules for chat {chat_id}: {e}")
+                    rules = {}
 
-            self.active_chats.add(chat_id)
-            log.info(f"Successfully joined chat: {getattr(chat, 'title', 'Unknown')}")
+                # Add to database and active chats
+                await self.db.add_chat(
+                    chat_id=chat_id,
+                    title=getattr(chat, 'title', 'Unknown'),
+                    username=getattr(chat, 'username', None),
+                    members_count=getattr(chat, 'participants_count', 0),
+                    ai_analysis={"should_stay": True, "reason": "Passed post-approval analysis"},
+                    is_active=True
+                )
+
+                self.active_chats.add(chat_id)
+                log.info(f"Successfully joined and staying in chat: {getattr(chat, 'title', 'Unknown')}")
 
         except Exception as e:
             log.error(f"Error handling new chat {chat_id}: {e}")
