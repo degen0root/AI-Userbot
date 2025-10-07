@@ -218,7 +218,7 @@ class AnthropicClient(LLMClient):
 class GoogleGeminiClient(LLMClient):
     """Google Gemini API client"""
     
-    def __init__(self, api_key: str, model: str = "gemini-1.5-flash",
+    def __init__(self, api_key: str, model: str = "gemini-2.0-flash-lite",
                  temperature: float = 0.7):
         self.api_key = api_key
         self.model = model

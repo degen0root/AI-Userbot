@@ -208,7 +208,9 @@ def load_config(path: Optional[str | os.PathLike[str]] = None) -> AppConfig:
     if google_api_key:
         cfg.llm.api_key = google_api_key
         cfg.llm.provider = "google"
-        cfg.llm.model = "gemini-pro"
+        # Use configured model, fallback to gemini-2.0-flash-lite if not set
+        if not cfg.llm.model or cfg.llm.model == "gemini-pro":
+            cfg.llm.model = "gemini-2.0-flash-lite"
     elif openai_api_key:
         cfg.llm.api_key = openai_api_key
         cfg.llm.provider = "openai"

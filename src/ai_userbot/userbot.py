@@ -897,7 +897,7 @@ class UserBot:
 
         # Also accept chats with reasonable size (not too small, not too large)
         participants_count = getattr(chat, 'participants_count', 0)
-        if 50 <= participants_count <= 50000:  # Reasonable size range
+        if participants_count and 50 <= participants_count <= 50000:  # Reasonable size range
             return True
 
         return False
