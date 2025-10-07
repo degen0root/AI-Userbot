@@ -11,7 +11,11 @@ class PersonaManager:
     
     def __init__(self, config: PersonaSection):
         self.config = config
+        import logging
+        log = logging.getLogger(__name__)
+        log.info(f"PersonaManager initialized with config: {config}")
         self._initialize_personality_traits()
+        log.info(f"PersonaManager background: {hasattr(self, 'background')}")
     
     def _initialize_personality_traits(self):
         """Initialize additional personality traits for more natural behavior"""
@@ -29,56 +33,6 @@ class PersonaManager:
         }
         self.interaction_count = 0
         self.topics_discussed = set()
-
-    def update_experience(self, topics: List[str], conversation_style: str = None):
-        """Update persona experience and knowledge from interactions"""
-        # Update topic knowledge
-        for topic in topics:
-            if topic not in self.knowledge_base:
-                self.knowledge_base[topic] = 0
-            self.knowledge_base[topic] += 1
-            self.topics_discussed.add(topic)
-
-        # Update conversation styles
-        if conversation_style:
-            if conversation_style in self.conversation_styles:
-                self.conversation_styles[conversation_style] = min(1.0, self.conversation_styles[conversation_style] + 0.1)
-
-        self.interaction_count += 1
-
-        # Update mood based on interaction count and topics
-        self._update_mood_from_experience()
-
-    def _update_mood_from_experience(self):
-        """Update mood based on accumulated experience"""
-        if self.interaction_count > 100:
-            # More experienced persona becomes more confident
-            self.mood_states = ["уверенная", "спокойная", "вдохновленная", "мечтательная", "радостная"]
-        elif self.interaction_count > 50:
-            # Moderately experienced
-            self.mood_states = ["спокойная", "задумчивая", "вдохновленная", "мечтательная"]
-
-        # Update current mood based on knowledge diversity
-        if len(self.topics_discussed) > 10:
-            self.current_mood = "мудрая"
-        elif len(self.topics_discussed) > 5:
-            self.current_mood = "опытная"
-
-    def get_adaptive_system_prompt(self) -> str:
-        """Generate adaptive system prompt based on accumulated experience"""
-        base_prompt = self.get_system_prompt()
-
-        # Add experience-based modifications
-        if self.interaction_count > 100:
-            base_prompt += "\n\nТы очень опытная в общении, умеешь поддерживать глубокие разговоры и давать мудрые советы."
-
-        if self.conversation_styles.get("empathetic", 0) > 0.5:
-            base_prompt += "\n\nТы очень эмпатичная и умеешь слушать людей, понимаешь их чувства."
-
-        if self.conversation_styles.get("detailed", 0) > 0.5:
-            base_prompt += "\n\nТы предпочитаешь детальные ответы, делишься личным опытом и примерами."
-
-        return base_prompt
 
         # Extended background story
         self.background = {
@@ -165,6 +119,56 @@ class PersonaManager:
                 "удаленная работа", "home office", "зум", "slack"
             ]
         }
+
+    def update_experience(self, topics: List[str], conversation_style: str = None):
+        """Update persona experience and knowledge from interactions"""
+        # Update topic knowledge
+        for topic in topics:
+            if topic not in self.knowledge_base:
+                self.knowledge_base[topic] = 0
+            self.knowledge_base[topic] += 1
+            self.topics_discussed.add(topic)
+
+        # Update conversation styles
+        if conversation_style:
+            if conversation_style in self.conversation_styles:
+                self.conversation_styles[conversation_style] = min(1.0, self.conversation_styles[conversation_style] + 0.1)
+
+        self.interaction_count += 1
+
+        # Update mood based on interaction count and topics
+        self._update_mood_from_experience()
+
+    def _update_mood_from_experience(self):
+        """Update mood based on accumulated experience"""
+        if self.interaction_count > 100:
+            # More experienced persona becomes more confident
+            self.mood_states = ["уверенная", "спокойная", "вдохновленная", "мечтательная", "радостная"]
+        elif self.interaction_count > 50:
+            # Moderately experienced
+            self.mood_states = ["спокойная", "задумчивая", "вдохновленная", "мечтательная"]
+
+        # Update current mood based on knowledge diversity
+        if len(self.topics_discussed) > 10:
+            self.current_mood = "мудрая"
+        elif len(self.topics_discussed) > 5:
+            self.current_mood = "опытная"
+
+    def get_adaptive_system_prompt(self) -> str:
+        """Generate adaptive system prompt based on accumulated experience"""
+        base_prompt = self.get_system_prompt()
+
+        # Add experience-based modifications
+        if self.interaction_count > 100:
+            base_prompt += "\n\nТы очень опытная в общении, умеешь поддерживать глубокие разговоры и давать мудрые советы."
+
+        if self.conversation_styles.get("empathetic", 0) > 0.5:
+            base_prompt += "\n\nТы очень эмпатичная и умеешь слушать людей, понимаешь их чувства."
+
+        if self.conversation_styles.get("detailed", 0) > 0.5:
+            base_prompt += "\n\nТы предпочитаешь детальные ответы, делишься личным опытом и примерами."
+
+        return base_prompt
     
     def get_description(self) -> str:
         """Get persona description for LLM prompt"""

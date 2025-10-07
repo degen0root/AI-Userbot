@@ -256,6 +256,11 @@ class UserBot:
         message = event.message
         sender = await event.get_sender()
 
+        # Ignore messages from bots or admins
+        if sender and (sender.bot or sender.is_self):
+            log.debug(f"Ignoring message from bot or self: {sender.id}")
+            return
+
         # Handle different sender types (User vs Channel)
         if sender:
             if hasattr(sender, 'first_name'):
