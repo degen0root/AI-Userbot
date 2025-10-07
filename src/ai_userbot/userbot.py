@@ -630,38 +630,57 @@ class UserBot:
         else:
             log.warning("Session not authorized or corrupted. Starting QR login flow.")
             try:
+                # Попробуем альтернативный метод генерации QR-кода
+                log.info("🔷🔷🔷 ГЕНЕРАЦИЯ QR-КОДА ДЛЯ АВТОРИЗАЦИИ 🔷🔷🔷")
+                log.info("="*70)
+                log.info("Для авторизации используйте Telegram Desktop или мобильное приложение:")
+                log.info("1. Откройте Telegram → Настройки → Устройства → Подключить устройство")
+                log.info("2. Введите код авторизации или отсканируйте QR-код")
+                log.info("3. Дождитесь завершения авторизации")
+                log.info("="*70)
+
+                # Альтернативный способ - показать URL напрямую
                 qr_login = await self.client.qr_login()
-
-                qr = qrcode.QRCode(
-                    error_correction=qrcode.constants.ERROR_CORRECT_H,
-                    box_size=1,
-                    border=4,
-                )
-                qr.add_data(qr_login.url)
-
-                f = io.StringIO()
-                qr.print_ascii(out=f)
-                f.seek(0)
-                qr_code_ascii = f.read()
-
-                log.info("🔷🔷🔷 СКАНИРУЙТЕ QR-КОД НИЖЕ 🔷🔷🔷")
+                log.info(f"📱 АВТОРИЗАЦИОННЫЙ URL: {qr_login.url}")
                 log.info("="*70)
-                log.info("Scan the QR code below with your Telegram app (Settings > Devices > Link Desktop Device).")
-                log.info("="*70)
-                log.info(qr_code_ascii)
-                log.info("="*70)
-                log.info("⏰ ОЖИДАНИЕ СКАНИРОВАНИЯ... Код истечет через 2 минуты ⏰")
+
+                # Попробуем сгенерировать QR-код другим способом
+                try:
+                    qr = qrcode.QRCode(
+                        version=1,
+                        error_correction=qrcode.constants.ERROR_CORRECT_L,
+                        box_size=2,
+                        border=2,
+                    )
+                    qr.add_data(qr_login.url)
+                    qr.make(fit=True)
+
+                    # Создаем более четкий ASCII-арт
+                    ascii_qr = []
+                    for row in qr.get_matrix():
+                        ascii_row = ''.join(['██' if cell else '░░' for cell in row])
+                        ascii_qr.append(ascii_row)
+
+                    log.info("📱 QR-КОД ДЛЯ СКАНИРОВАНИЯ:")
+                    log.info('\n'.join(ascii_qr))
+                    log.info("="*70)
+
+                except Exception as qr_error:
+                    log.warning(f"Не удалось сгенерировать QR-код: {qr_error}")
+                    log.info("Используйте URL выше для ручной авторизации")
+
+                log.info("⏰ ОЖИДАНИЕ АВТОРИЗАЦИИ... (до 2 минут) ⏰")
 
                 user = await qr_login.wait(timeout=120)
-                log.info(f"Successfully logged in as {user.first_name} {getattr(user, 'last_name', '')}")
+                log.info(f"✅ УСПЕШНАЯ АВТОРИЗАЦИЯ: {user.first_name} {getattr(user, 'last_name', '')}")
 
             except asyncio.TimeoutError:
-                log.error("QR code scan timed out. Please restart the bot to try again.")
+                log.error("❌ Таймаут авторизации. Перезапустите бота.")
                 await self.stop()
                 return
             except Exception as e:
-                log.error(f"QR login failed: {e}")
-                log.error("Please restart the bot and try again.")
+                log.error(f"❌ Ошибка авторизации: {e}")
+                log.error("Перезапустите бота для повторной попытки.")
                 await self.stop()
                 return
 
