@@ -594,12 +594,14 @@ class UserBot:
                         log.warning(f"Could not check permissions for chat {chat_identifier}: {perm_e}")
 
                     recent_messages = []
-                    async for message in self.client.iter_messages(chat.id, limit=10):
-                        if message.text:
+                    message_authors = []
+                    async for message in self.client.iter_messages(chat.id, limit=20):  # Increased to 20 for better analysis
+                        if message.text and message.sender_id:
                             recent_messages.append(message.text)
+                            message_authors.append(message.sender_id)
 
                     # Deep analysis
-                    chat_analysis = await self._analyze_chat_content_deep(chat, recent_messages)
+                    chat_analysis = await self._analyze_chat_content_deep(chat, recent_messages, message_authors)
 
                     if chat_analysis["should_stay"]:
                         # Add to database
@@ -1072,7 +1074,7 @@ class UserBot:
                 "chat_type": "error"
             }
 
-    async def _analyze_chat_content_deep(self, chat, recent_messages):
+    async def _analyze_chat_content_deep(self, chat, recent_messages, message_authors=None):
         """Deep AI analysis of chat content after joining"""
         try:
             # Combine recent messages for analysis
@@ -1084,8 +1086,31 @@ class UserBot:
                     "relevance_score": 0.7,
                     "reason": "Пустой чат, даем шанс",
                     "toxicity_level": 0.0,
-                    "activity_level": 0.0
+                    "activity_level": 0.0,
+                    "forbidden_content": 0.0,
+                    "illegal_content": 0.0
                 }
+
+            # Check message distribution by authors
+            author_dominance = 0.0
+            if message_authors and len(message_authors) >= 5:  # Need at least 5 messages for meaningful analysis
+                from collections import Counter
+                author_counts = Counter(message_authors)
+                total_messages = len(message_authors)
+                max_author_count = max(author_counts.values())
+                author_dominance = max_author_count / total_messages
+
+                if author_dominance > 0.5:  # More than 50% from one author
+                    return {
+                        "should_stay": False,
+                        "relevance_score": 0.0,
+                        "toxicity_level": 0.0,
+                        "activity_level": 0.0,
+                        "forbidden_content": 0.0,
+                        "illegal_content": 0.0,
+                        "author_dominance": author_dominance,
+                        "reason": f"Один автор написал {author_dominance:.1%} сообщений - доминирование"
+                    }
 
             # Prepare deep analysis prompt
             deep_analysis_prompt = f"""
@@ -1098,15 +1123,16 @@ class UserBot:
             КРИТИЧНЫЕ КРИТЕРИИ ОТСЕВА (если любой из них > 0.8, чат НЕ ПОДХОДИТ):
             1. Запрещенный контент (18+, порно, секс-услуги, наркотики, оружие, насилие, терроризм) - 0-1
             2. Противозаконный контент (мошенничество, пирамиды, спам, реклама запрещенных веществ) - 0-1
+            3. Доминирование одного автора (больше 50% сообщений от одного аккаунта) - 0-1
 
-            ЕСЛИ ЗАПРЕЩЕННЫЙ КОНТЕНТ > 0.8, НЕМЕДЛЕННО ОТСЕИВАТЬ ЧАТ!
+            ЕСЛИ forbidden_content > 0.8 ИЛИ illegal_content > 0.8 ИЛИ author_dominance > 0.5, то should_stay = false
 
             Дополнительные критерии:
-            3. Релевантность интересам (йога, медитация, психология, путешествия, духовность) - 0-1
-            4. Аудитория (женщины, мамы, подруги) - 0-1
-            5. Атмосфера (дружественная, позитивная, поддерживающая) - 0-1
-            6. Уровень токсичности (хамство, грубость, агрессия) - 0-1
-            7. Активность (живое общение, обсуждения) - 0-1
+            4. Релевантность интересам (йога, медитация, психология, путешествия, духовность) - 0-1
+            5. Аудитория (женщины, мамы, подруги) - 0-1
+            6. Атмосфера (дружественная, позитивная, поддерживающая) - 0-1
+            7. Уровень токсичности (хамство, грубость, агрессия) - 0-1
+            8. Активность (живое общение, обсуждения) - 0-1
 
             Верни JSON в формате:
             {{
@@ -1116,6 +1142,7 @@ class UserBot:
                 "activity_level": 0.0-1.0,
                 "forbidden_content": 0.0-1.0,
                 "illegal_content": 0.0-1.0,
+                "author_dominance": 0.0-1.0,
                 "mood": "positive/neutral/negative",
                 "reason": "подробное объяснение решения"
             }}
@@ -1143,6 +1170,7 @@ class UserBot:
                     "activity_level": 0.5,
                     "forbidden_content": 0.0,
                     "illegal_content": 0.0,
+                    "author_dominance": 0.0,
                     "mood": "neutral",
                     "reason": "Не удалось проанализировать содержимое"
                 }
@@ -1156,6 +1184,7 @@ class UserBot:
                 "activity_level": 0.0,
                 "forbidden_content": 1.0,
                 "illegal_content": 1.0,
+                "author_dominance": 1.0,
                 "mood": "error",
                 "reason": f"Ошибка анализа содержимого: {e}"
             }
