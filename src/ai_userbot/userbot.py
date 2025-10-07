@@ -291,8 +291,8 @@ class UserBot:
 
         # Check if we should respond (simplified logic for personal messages)
         if await self._should_respond_to_personal(sender, message):
-            # Simulate human-like typing
-            await self._simulate_human_behavior(0, message)  # 0 for personal
+            # Simulate human-like typing for personal messages
+            await self._simulate_human_behavior(chat_id=0)  # Personal messages don't need read acknowledge
 
             # Generate response
             response = await self._generate_personal_response(message)
@@ -361,7 +361,7 @@ class UserBot:
             return
 
         # Simulate human-like typing
-        await self._simulate_human_behavior(chat_id, message)
+        await self._simulate_human_behavior_with_message(chat_id, message)
 
         # Generate response
         response = await self._generate_response(chat_id, message)
@@ -1269,7 +1269,7 @@ class UserBot:
             return
 
         # Simulate typing with random delay
-        await self._simulate_human_behavior(chat_id, message)
+        await self._simulate_human_behavior_with_message(chat_id, message)
 
         # Generate response
         response = await self._generate_response(chat_id, message)
@@ -1454,7 +1454,7 @@ class UserBot:
         
         return True
 
-    async def _simulate_human_behavior(self, chat_id: int, message: Message):
+    async def _simulate_human_behavior_with_message(self, chat_id: int, message: Message):
         """Simulate human typing and delays"""
         # Random delay before "reading"
         await asyncio.sleep(random.uniform(1, 5))
