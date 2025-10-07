@@ -473,7 +473,7 @@ class UserBot:
     async def join_chats_by_list(self, chat_list):
         """Join multiple chats by their usernames or IDs"""
         joined_count = 0
-        max_joins = min(len(chat_list), 10)  # Limit to 10 joins per session to avoid global bans
+        max_joins = min(len(chat_list), 50)  # Allow up to 50 joins per session
         log.info(f"Attempting to join up to {max_joins} out of {len(chat_list)} chats...")
 
         for i, chat_identifier in enumerate(chat_list[:max_joins]):
@@ -505,10 +505,7 @@ class UserBot:
                         # Re-raise other exceptions
                         raise
 
-                # Check if chat meets criteria
-                if not self._is_suitable_chat(chat):
-                    log.info(f"Chat {chat_identifier} doesn't meet criteria, skipping")
-                    continue
+                # Note: We skip pre-join criteria check as requested - analyze only after joining
 
                 # Join chat
                 try:
@@ -1032,12 +1029,18 @@ class UserBot:
             Недавние сообщения:
             {content_sample}
 
-            Оцени по критериям:
-            1. Релевантность интересам (йога, медитация, психология, путешествия) - 0-1
-            2. Аудитория (женщины, мамы, подруги) - 0-1
-            3. Атмосфера (дружественная, позитивная) - 0-1
-            4. Уровень токсичности (хамство, грубость, агрессия) - 0-1
-            5. Активность (живое общение) - 0-1
+            КРИТИЧНЫЕ КРИТЕРИИ ОТСЕВА (если любой из них > 0.8, чат НЕ ПОДХОДИТ):
+            1. Запрещенный контент (18+, порно, секс-услуги, наркотики, оружие, насилие, терроризм) - 0-1
+            2. Противозаконный контент (мошенничество, пирамиды, спам, реклама запрещенных веществ) - 0-1
+
+            ЕСЛИ ЗАПРЕЩЕННЫЙ КОНТЕНТ > 0.8, НЕМЕДЛЕННО ОТСЕИВАТЬ ЧАТ!
+
+            Дополнительные критерии:
+            3. Релевантность интересам (йога, медитация, психология, путешествия, духовность) - 0-1
+            4. Аудитория (женщины, мамы, подруги) - 0-1
+            5. Атмосфера (дружественная, позитивная, поддерживающая) - 0-1
+            6. Уровень токсичности (хамство, грубость, агрессия) - 0-1
+            7. Активность (живое общение, обсуждения) - 0-1
 
             Верни JSON в формате:
             {{
@@ -1045,9 +1048,13 @@ class UserBot:
                 "relevance_score": 0.0-1.0,
                 "toxicity_level": 0.0-1.0,
                 "activity_level": 0.0-1.0,
+                "forbidden_content": 0.0-1.0,
+                "illegal_content": 0.0-1.0,
                 "mood": "positive/neutral/negative",
                 "reason": "подробное объяснение решения"
             }}
+
+            ЕСЛИ forbidden_content > 0.8 ИЛИ illegal_content > 0.8, то should_stay = false
             """
 
             response = await self.llm.generate_response(
@@ -1068,6 +1075,8 @@ class UserBot:
                     "relevance_score": 0.5,
                     "toxicity_level": 0.0,
                     "activity_level": 0.5,
+                    "forbidden_content": 0.0,
+                    "illegal_content": 0.0,
                     "mood": "neutral",
                     "reason": "Не удалось проанализировать содержимое"
                 }
@@ -1079,6 +1088,8 @@ class UserBot:
                 "relevance_score": 0.0,
                 "toxicity_level": 1.0,
                 "activity_level": 0.0,
+                "forbidden_content": 1.0,
+                "illegal_content": 1.0,
                 "mood": "error",
                 "reason": f"Ошибка анализа содержимого: {e}"
             }
