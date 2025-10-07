@@ -414,8 +414,8 @@ class UserBot:
             else:
                 # Get tailored system prompt for established contacts
                 system_prompt = self.persona.get_system_prompt_for_personal_chat(relationship_stage)
-                # Generate response
-                response = await self._generate_personal_response(message, system_prompt)
+                # Generate response with conversation context
+                response = await self._generate_personal_response(message, system_prompt, sender)
 
             if response:
                 try:
@@ -885,10 +885,22 @@ class UserBot:
 
         return len(recent_messages) < self.config.telegram.max_personal_replies_per_hour
 
-    async def _generate_personal_response(self, message, system_prompt: str):
-        """Generate response to personal message"""
+    async def _generate_personal_response(self, message, system_prompt: str, sender=None):
+        """Generate response to personal message with conversation context"""
         try:
-            context = f"Пользователь написал: {message.text or ''}"
+            # Get conversation context for this user (last 40 messages)
+            if sender:
+                sender_id = sender.id if hasattr(sender, 'id') else 0
+                context_messages = await self.db.get_recent_messages(chat_id=0, limit=40)
+
+                # Filter messages for this specific user
+                user_messages = [msg for msg in context_messages if msg.user_id == sender_id]
+
+                # Build context string from conversation history
+                context = self._build_personal_message_context(user_messages, sender)
+                context = f"История переписки:\n{context}\n\nТекущее сообщение: {message.text or ''}"
+            else:
+                context = f"Пользователь написал: {message.text or ''}"
 
             response = await self.llm.generate_response(
                 system_prompt=system_prompt,
@@ -925,7 +937,17 @@ class UserBot:
                     f"{greeting}. Какое у вас дело?"
                 ]
 
-                context = f"Неизвестный человек написал: '{message.text or ''}'"
+                # Get any existing context for this user (even if first interaction)
+                context_messages = await self.db.get_recent_messages(chat_id=0, limit=10)
+                user_context = [msg for msg in context_messages if msg.user_id == sender.id]
+
+                if user_context:
+                    # Has some context - use it
+                    context = self._build_personal_message_context(user_context, sender)
+                    context = f"Предыдущий контекст:\n{context}\n\nНеизвестный человек написал: '{message.text or ''}'"
+                else:
+                    context = f"Неизвестный человек написал: '{message.text or ''}'"
+
                 response = await self.llm.generate_response(
                     system_prompt=self.persona.get_system_prompt_for_personal_chat("new_contact"),
                     user_message=context,
@@ -2158,6 +2180,20 @@ class UserBot:
             context_parts.append(f"{msg.username or 'User'}: {msg.message_text}")
 
         return "\n".join(context_parts) if context_parts else "Начало разговора"
+
+    def _build_personal_message_context(self, user_messages, sender) -> str:
+        """Build context from personal conversation history"""
+        context_parts = []
+
+        # Show last 10 messages from conversation (5 from each side)
+        for msg in user_messages[-10:]:
+            if msg.is_bot_message:
+                context_parts.append(f"Анна: {msg.message_text}")
+            else:
+                sender_name = sender.first_name if hasattr(sender, 'first_name') else 'Пользователь'
+                context_parts.append(f"{sender_name}: {msg.message_text}")
+
+        return "\n".join(context_parts) if context_parts else "Начало переписки"
 
     async def _generate_human_like_response(self, context, chat_id):
         """Generate human-like response with typos and variations"""
