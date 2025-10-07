@@ -34,6 +34,11 @@ class PersonaManager:
         self.interaction_count = 0
         self.topics_discussed = set()
 
+        # Daily bot recommendations state
+        self.last_recommendation_check = None
+        self.current_cycle_recommendations = None
+        self.current_moon_recommendations = None
+
         # Extended background story
         self.background = {
             "профессия": "мама в декрете, увлекаюсь женскими практиками",
@@ -427,6 +432,87 @@ class PersonaManager:
         context_lower = context.lower()
         deep_count = sum(1 for keyword in deep_keywords if keyword in context_lower)
         return deep_count >= 2 and random.random() < 0.05  # 5% chance for deep conversations
+
+    def check_daily_recommendations(self) -> Dict[str, str]:
+        """Check if it's time for daily bot recommendations and get them"""
+        from datetime import datetime, date
+
+        # Check if we already checked today
+        today = date.today()
+        if self.last_recommendation_check == today:
+            return {
+                "cycle": self.current_cycle_recommendations or "Рекомендации не получены",
+                "moon": self.current_moon_recommendations or "Рекомендации не получены"
+            }
+
+        # For demo purposes, generate sample recommendations
+        # In real implementation, this would interact with the actual bot
+        self.current_cycle_recommendations = self._generate_cycle_recommendations()
+        self.current_moon_recommendations = self._generate_moon_recommendations()
+
+        self.last_recommendation_check = today
+        return {
+            "cycle": self.current_cycle_recommendations,
+            "moon": self.current_moon_recommendations
+        }
+
+    def _generate_cycle_recommendations(self) -> str:
+        """Generate sample cycle-based recommendations"""
+        # This would normally come from the actual bot
+        cycle_recommendations = [
+            "Сегодня благоприятный день для медитации и самоанализа. Посвятите время размышлениям о своих целях.",
+            "Ваша энергия на подъеме - отличное время для творческих занятий и общения с близкими.",
+            "День подходит для отдыха и восстановления сил. Прислушайтесь к потребностям своего тела.",
+            "Энергия стабильная - хорошее время для планирования и организации дел на неделю.",
+            "Период повышенной интуиции. Доверяйте своим внутренним ощущениям при принятии решений."
+        ]
+        return random.choice(cycle_recommendations)
+
+    def _generate_moon_recommendations(self) -> str:
+        """Generate sample moon phase recommendations"""
+        moon_recommendations = [
+            "В период растущей луны фокусируйтесь на новых начинаниях и росте. Идеальное время для изучения нового.",
+            "Полнолуние усиливает эмоции. Будьте внимательны к своим чувствам и чувствам окружающих.",
+            "Убывающая луна благоприятствует завершению дел и избавлению от ненужного. Наведите порядок в мыслях.",
+            "Новолуние - время для новых идей и намерений. Запишите свои цели на ближайший месяц.",
+            "Луна в знаке воды усиливает эмоциональную связь. Посвятите время близким людям."
+        ]
+        return random.choice(moon_recommendations)
+
+    def apply_recommendations_to_mood(self, recommendations: Dict[str, str]) -> str:
+        """Apply bot recommendations to influence Anna's mood"""
+        cycle_rec = recommendations.get("cycle", "")
+        moon_rec = recommendations.get("moon", "")
+
+        # Analyze recommendations to determine mood influence
+        mood_influences = []
+
+        # Cycle-based mood influences
+        if any(word in cycle_rec.lower() for word in ["медитация", "самоанализ", "размышления"]):
+            mood_influences.append(("задумчивая", 0.3))
+        if any(word in cycle_rec.lower() for word in ["энергия", "подъем", "творчес"]):
+            mood_influences.append(("вдохновленная", 0.4))
+        if any(word in cycle_rec.lower() for word in ["отдых", "восстановление"]):
+            mood_influences.append(("спокойная", 0.3))
+
+        # Moon-based mood influences
+        if any(word in moon_rec.lower() for word in ["эмоции", "чувства", "близкие"]):
+            mood_influences.append(("мечтательная", 0.2))
+        if any(word in moon_rec.lower() for word in ["новые", "начинания", "цели"]):
+            mood_influences.append(("вдохновленная", 0.3))
+        if any(word in moon_rec.lower() for word in ["порядок", "завершение"]):
+            mood_influences.append(("спокойная", 0.2))
+
+        # Apply mood changes
+        if mood_influences:
+            # Choose the strongest influence
+            best_mood, strength = max(mood_influences, key=lambda x: x[1])
+            if random.random() < strength:
+                old_mood = self.current_mood
+                self.current_mood = best_mood
+                return f"Настроение изменилось с '{old_mood}' на '{best_mood}' благодаря рекомендациям бота"
+
+        return f"Рекомендации получены, настроение '{self.current_mood}' сохраняется"
     
     def get_agreement_phrase(self) -> str:
         """Get an agreement phrase"""

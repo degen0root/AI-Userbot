@@ -87,6 +87,14 @@ promoted_bot:
   name: "ЛУННЫЙ ХРАМ"  # Set via PROMOTED_BOT_NAME env var
   context_file: "promoted_bot_context.py"
 
+# Настройки для ежедневного использования бота ЛУННЫЙ ХРАМ Анной
+self_bot:
+  username: "@womanspirit_bot"
+  name: "ЛУННЫЙ ХРАМ"
+  enabled: true  # Анна использует этот бот ежедневно
+  daily_check_hour: 9  # Проверяет рекомендации в 9 утра
+  mood_influence: 0.7  # Насколько сильно рекомендации влияют на настроение (0-1)
+
 policy:
   disclose_identity: false  # Don't reveal bot identity
   disclosure_text: ""

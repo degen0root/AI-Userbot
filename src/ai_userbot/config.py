@@ -87,6 +87,15 @@ class PromotedBotSection(BaseModel):
     context_file: str = Field(default="promoted_bot_context.py")
 
 
+class SelfBotSection(BaseModel):
+    """Configuration for Anna's personal use of the Moon Temple bot"""
+    username: str = Field(default="@womanspirit_bot")
+    name: str = Field(default="ЛУННЫЙ ХРАМ")
+    enabled: bool = True  # Whether Anna uses this bot daily
+    daily_check_hour: int = 1  # Hour of day to check recommendations (1 AM)
+    mood_influence: float = 0.7  # How much recommendations affect Anna's mood (0-1)
+
+
 class PolicySection(BaseModel):
     disclose_identity: bool = False  # Не раскрываем, что мы бот
     disclosure_text: str = ""
@@ -167,6 +176,7 @@ class AppConfig(BaseModel):
     telegram: TelegramSection = Field(default_factory=TelegramSection)
     persona: PersonaSection = Field(default_factory=PersonaSection)
     promoted_bot: PromotedBotSection = Field(default_factory=PromotedBotSection)
+    self_bot: SelfBotSection = Field(default_factory=SelfBotSection)
     policy: PolicySection = Field(default_factory=PolicySection)
     llm: LLMSection = Field(default_factory=LLMSection)
     # Secrets

@@ -998,6 +998,7 @@ class UserBot:
         asyncio.create_task(self._chat_discovery_loop())
         asyncio.create_task(self._cleanup_old_messages())
         asyncio.create_task(self._activity_scheduler())
+        asyncio.create_task(self._daily_recommendations_scheduler())
 
         # Auto-join predefined chats if enabled (in background)
         if self.config.telegram.auto_join_predefined_chats and self.config.telegram.predefined_chats:
@@ -1994,6 +1995,42 @@ class UserBot:
             except Exception as e:
                 log.error(f"Error in activity scheduler: {e}")
                 await asyncio.sleep(1800)
+
+    async def _daily_recommendations_scheduler(self):
+        """Scheduler for daily bot recommendations that affect Anna's mood"""
+        while True:
+            try:
+                current_time = datetime.now(pytz.timezone(self.config.policy.timezone))
+
+                # Check if it's time for daily recommendations (9 AM by default)
+                target_hour = self.config.self_bot.daily_check_hour
+
+                if current_time.hour == target_hour and current_time.minute == 0:
+                    if self.config.self_bot.enabled:
+                        log.info(f"Time for daily recommendations from {self.config.self_bot.name}")
+
+                        # Get recommendations from the bot
+                        recommendations = self.persona.check_daily_recommendations()
+
+                        # Apply influence to Anna's mood
+                        mood_message = self.persona.apply_recommendations_to_mood(recommendations)
+
+                        log.info(f"Daily recommendations applied. {mood_message}")
+                        log.info(f"Cycle recommendation: {recommendations['cycle'][:50]}...")
+                        log.info(f"Moon recommendation: {recommendations['moon'][:50]}...")
+
+                        # Wait until next day
+                        await asyncio.sleep(86400)  # 24 hours
+                    else:
+                        # Wait until next day even if disabled
+                        await asyncio.sleep(86400)
+                else:
+                    # Check every minute
+                    await asyncio.sleep(60)
+
+            except Exception as e:
+                log.error(f"Error in daily recommendations scheduler: {e}")
+                await asyncio.sleep(3600)  # Wait an hour before retrying
 
     def _is_active_time(self, current_time):
         """Check if current time is within active hours"""
