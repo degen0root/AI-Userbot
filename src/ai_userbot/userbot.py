@@ -291,8 +291,10 @@ class UserBot:
 
         # Check if we should respond (simplified logic for personal messages)
         if await self._should_respond_to_personal(sender, message):
-            # Simulate human-like typing for personal messages
-            await self._simulate_human_behavior(chat_id=0)  # Personal messages don't need read acknowledge
+            # Simulate human-like delay for personal messages
+            delay = random.uniform(*self.config.policy.reaction_delay_range)
+            log.debug(f"Simulating {delay:.1f}s delay before responding to personal message")
+            await asyncio.sleep(delay)
 
             # Generate response
             response = await self._generate_personal_response(message)
